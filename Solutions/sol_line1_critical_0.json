@@ -1,0 +1,1 @@
+{"objective_value": 10, "events": [{"time": 0, "train": 0, "operation": 0}, {"time": 0, "train": 1, "operation": 0}, {"time": 5, "train": 0, "operation": 2}, {"time": 5, "train": 1, "operation": 1}, {"time": 10, "train": 1, "operation": 2}, {"time": 10, "train": 0, "operation": 3}]}

@@ -2,6 +2,8 @@ import argparse
 import json
 import gurobipy as gp
 
+from displib_verify import INFINITY
+
 
 class Instance:
     def __init__(self, trains, objectives):
@@ -37,8 +39,8 @@ class Solution:
 
 def main():
     try:
-        with open(f"Instances/{args.instance}", 'r') as instance:
-            data = json.load(instance)
+        with open(f"Instances/{args.instance}", 'r') as file:
+            instance = json.load(file)
     except FileNotFoundError:
         print(f"File {args.instance} was not found")
         return
@@ -46,7 +48,7 @@ def main():
         print(f"File {args.instance} could not be decoded")
         return
 
-    instance = parse_instance(data)
+    instance = parse_instance(instance)
 
     solver = DisplibSolver(instance)
     solution = solver.solve()
@@ -58,8 +60,31 @@ def write_solution_to_file(solution : Solution):
         file.write(json.dumps({"objective_value": solution.objective_value, "events": solution.events}))
 
 
-def parse_instance(json_obj):
-    return Instance([train for train in json_obj["trains"]], [objective for objective in json_obj["objective"]])
+def parse_instance(instance):
+    # Fill in the defined default values for easy access
+    for train in instance["trains"]:
+        for operation in train:
+            if "start_lb" not in operation:
+                operation["start_lb"] = 0
+            if "start_ub" not in operation:
+                # Maybe change that to INFINITY later...
+                operation["start_ub"] = None
+            if "resources" not in operation:
+                operation["resources"] = []
+            else:
+                for res_dict in operation["resources"]:
+                    if "release_time" not in res_dict:
+                        res_dict["release_time"] = 0
+
+    for objective in instance["objective"]:
+        if "threshold" not in objective:
+            objective["threshold"] = 0
+        if "increment" not in objective:
+            objective["increment"] = 0
+        if "coeff" not in objective:
+            objective["coeff"] = 0
+
+    return Instance(instance["trains"], instance["objective"])
 
 
 if __name__ == "__main__":

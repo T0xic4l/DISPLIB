@@ -1,8 +1,7 @@
 import argparse
 import json
 import gurobipy as gp
-
-from displib_verify import INFINITY
+import networkx as nx
 
 
 class Instance:
@@ -15,7 +14,27 @@ class DisplibSolver:
     def __init__(self, instance):
         self.trains = instance.trains
         self.objectives = instance.objectives
+        self.graphs = [create_graph(train) for train in self.trains]
+
         self.model = gp.Model()
+        self.start_vars = []
+        self.select_vars = []
+
+        for i, train in enumerate(self.trains):
+            op_start_vars = []
+            op_select_vars = []
+
+            # inline declaration possible if ub is infinite per default
+            for j, op in enumerate(train):
+                if op["start_ub"]:
+                    op_start_vars.append(self.model.addVar(vtype=gp.GRB.INTEGER, lb=op["start_lb"], ub=op["start_ub"],
+                                                           name=f"Start Train {i} : Operation {j}"))
+                else:
+                    op_start_vars.append(self.model.addVar(vtype=gp.GRB.INTEGER, lb=op["start_lb"]))
+                op_select_vars.append(self.model.addVar(vtype=gp.GRB.BINARY, name=f"Select Train {i} : Operation {j}"))
+            self.start_vars.append(op_start_vars)
+            self.select_vars.append(op_select_vars)
+
 
     def solve(self):
         self.model.optimize()
@@ -30,6 +49,9 @@ class DisplibSolver:
 
         return Solution(10, events)
 
+    def set_objective(self):
+        # self.model.setObjective(gp.quicksum(for ob in self.objectives))
+        return 0
 
 class Solution:
     def __init__(self, objective_value, events):
@@ -55,6 +77,14 @@ def main():
     write_solution_to_file(solution)
 
 
+def create_graph(train):
+    graph = nx.DiGraph()
+    graph.add_nodes_from([i for i, _ in enumerate(train)])
+    for i, operation in enumerate(train):
+        graph.add_edges_from([(i, v) for v in operation["successors"]])
+    return graph
+
+
 def write_solution_to_file(solution : Solution):
     with open(f"Solutions/sol_{args.instance}", 'w') as file:
         file.write(json.dumps({"objective_value": solution.objective_value, "events": solution.events}))
@@ -67,7 +97,6 @@ def parse_instance(instance):
             if "start_lb" not in operation:
                 operation["start_lb"] = 0
             if "start_ub" not in operation:
-                # Maybe change that to INFINITY later...
                 operation["start_ub"] = None
             if "resources" not in operation:
                 operation["resources"] = []

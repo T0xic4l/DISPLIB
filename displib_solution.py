@@ -3,6 +3,7 @@ import json
 import gurobipy as gp
 import networkx as nx
 import matplotlib.pyplot as plt
+from tqdm import tqdm
 
 
 class Instance:
@@ -18,7 +19,7 @@ class DisplibSolver:
         self.graphs = [create_graph(train) for train in self.trains]
 
         if args.debug:
-            save_graphs_as_image(self.graphs)
+            self.save_graphs_as_image()
 
         self.model = gp.Model()
         self.op_start_vars = []
@@ -65,14 +66,21 @@ class DisplibSolver:
                                      gp.quicksum(self.edge_select_vars[i][out_edge] for out_edge in outs))
 
     def add_timing_constraints(self):
-        return
+        for i, train in enumerate(self.trains):
+            for j in range(1, len(self.graphs[i].nodes)):
+                ins = self.graphs[i].in_edges(j)
+
+                for in_edge in ins:
+                    # Operation only may start if (selected) predecessor finished
+                    self.model.addConstr((self.op_start_vars[i][in_edge[0]] + self.trains[i][in_edge[0]]["min_duration"])
+                                            * self.edge_select_vars[i][in_edge] <= self.op_start_vars[i][j])
+
 
     def solve(self):
         self.model.optimize()
 
-        if self.model.status == gp.GRB.OPTIMAL:
-            for v in self.model.getVars():
-                print(f"{v.VarName} = {v.X}")
+        if args.debug:
+            self.save_graphs_as_image(True)
 
         # Just to check for now
         events = [  {"time": 0, "train": 0, "operation": 0},
@@ -87,6 +95,47 @@ class DisplibSolver:
     def set_objective(self):
         # self.model.setObjective(gp.quicksum(for ob in self.objectives))
         return 0
+
+    def save_graphs_as_image(self, paths = False):
+        for i, graph in enumerate(tqdm(self.graphs, desc="Creating Graphs")):
+            colors = []
+            if paths:
+                for e in self.edge_select_vars[i].items():
+                    colors.append("red" if e[1].X == 1.0 else "gray")
+
+
+
+            depth = nx.single_source_shortest_path_length(graph, 0)
+
+            depth_groups = {}
+            for node, d in depth.items():
+                if d not in depth_groups:
+                    depth_groups[d] = []
+                depth_groups[d].append(node)
+
+            pos = {}
+            for d, nodes in depth_groups.items():
+                count = len(nodes)
+                for j, node in enumerate(sorted(nodes)):
+                    pos[node] = (d, -((count - 1) / 2) + j)
+
+            x = nx.shortest_path_length(graph, 0, len(graph.nodes) - 1)
+            plt.figure(figsize=(x, 5))
+            nx.draw(
+                graph,
+                pos,
+                with_labels=True,
+                node_size=700,
+                node_color="lightblue",
+                font_size=10,
+                font_color="black",
+                edge_color=colors if paths else "gray",
+                arrows=True,
+                arrowsize=20
+            )
+
+            plt.savefig(f"Graphs/graph{i}.png", format="png")
+            plt.close()
 
 class Solution:
     def __init__(self, objective_value, events):
@@ -150,44 +199,6 @@ def parse_instance(instance):
             objective["coeff"] = 0
 
     return Instance(instance["trains"], instance["objective"])
-
-
-def save_graphs_as_image(graphs):
-    print("Creating graphs...")
-
-    for i, graph in enumerate(graphs):
-        depth = nx.single_source_shortest_path_length(graph, 0)
-
-        depth_groups = {}
-        for node, d in depth.items():
-            if d not in depth_groups:
-                depth_groups[d] = []
-            depth_groups[d].append(node)
-
-        pos = {}
-        for d, nodes in depth_groups.items():
-            count = len(nodes)
-            for j, node in enumerate(sorted(nodes)):
-                pos[node] = (d, -((count - 1) / 2) + j)
-
-        x = nx.shortest_path_length(graph, 0, len(graph.nodes) - 1)
-        plt.figure(figsize=(x, 5))
-        nx.draw(
-            graph,
-            pos,
-            with_labels=True,
-            node_size=700,
-            node_color="lightblue",
-            font_size=10,
-            font_color="black",
-            edge_color="gray",
-            arrows=True,
-            arrowsize=20
-        )
-
-        plt.savefig(f"Graphs/graph{i}.png", format="png")
-        plt.close()
-    print("Done!")
 
 
 if __name__ == "__main__":

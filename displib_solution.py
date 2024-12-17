@@ -5,6 +5,15 @@ import networkx as nx
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
+"""
+Todos:
+1. Done: objective
+2. output
+3. Konflikte finden
+4. Model anhand konflikte aufteilen (max 3-4 Züge gleichzeitig)
+5. mit Teilmodelen Konflikte beseitigen
+6. Schritt 3-5 wiederholen bis Konflikt frei
+"""
 
 class Instance:
     def __init__(self, trains, objectives):
@@ -83,6 +92,7 @@ class DisplibSolver:
             self.save_graphs_as_image(True)
 
         # Just to check for now
+        #todo 2: ordentliche Ausgabe
         events = [  {"time": 0, "train": 0, "operation": 0},
                     {"time": 0, "train": 1, "operation": 0},
                     {"time": 5, "train": 0, "operation": 2},
@@ -90,11 +100,21 @@ class DisplibSolver:
                     {"time": 10, "train": 1, "operation": 2},
                     {"time": 10, "train": 0, "operation": 3}]
 
+        """
+        events = []
+        for i, train in enumerate(self.op_start_vars):
+            for j, op in enumerate(train):
+                #todo aktuell y bekommen, oder anders schreiben
+                if self.edge_select_vars[i][(y, j)].X > 0.5:
+                    event = {"time": int(round(op.X)), "train": i, "operation": j}
+                    events.append(event)
+        """
+
         return Solution(10, events)
 
-    def set_objective(self):
-        # self.model.setObjective(gp.quicksum(for ob in self.objectives))
-        return 0
+    def set_timing_objective(self):
+        #Done 1: set objective
+        self.model.setObjective(gp.quicksum(train[-1] for train in self.op_start_vars))
 
     def save_graphs_as_image(self, paths = False):
         for i, graph in enumerate(tqdm(self.graphs, desc="Creating Graphs")):
@@ -157,6 +177,7 @@ def main():
     instance = parse_instance(instance)
 
     solver = DisplibSolver(instance)
+    solver.set_timing_objective()
     solution = solver.solve()
     write_solution_to_file(solution)
 

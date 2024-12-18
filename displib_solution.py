@@ -33,27 +33,38 @@ class DisplibSolver:
             self.save_graphs_as_image()
 
         self.model = gp.Model()
-        self.op_start_vars = []
+        self.op_start_vars = {}
         self.edge_select_vars = []
+        self.threshold_vars = {}
 
         for i, train in enumerate(self.trains):
-            start_vars = []
-            select_vars = {}
-
             # inline declaration possible if ub is infinite per default
+            edge_vars = {}
             for j, op in enumerate(train):
                 if op["start_ub"]:
-                    start_vars.append(self.model.addVar(vtype=GRB.INTEGER, lb=op["start_lb"], ub=op["start_ub"],
-                                                        name=f"Train {i} : Operation {j}"))
+                    self.op_start_vars[(i,j)] = self.model.addVar(vtype=GRB.INTEGER, lb=op["start_lb"], ub=op["start_ub"],
+                                                        name=f"Train {i} : Operation {j}")
                 else:
-                    start_vars.append(self.model.addVar(vtype=GRB.INTEGER, lb=op["start_lb"],
-                                                        name=f"Train {i} : Operation {j}"))
-
+                    self.op_start_vars[(i, j)] = self.model.addVar(vtype=GRB.INTEGER, lb=op["start_lb"],
+                                                        name=f"Train {i} : Operation {j}")
                 for s in op["successors"]:
-                    select_vars[(j, s)] = self.model.addVar(vtype=GRB.BINARY,
+                    edge_vars[(j, s)] = self.model.addVar(vtype=GRB.BINARY,
                                                             name=f"Train {i} : Edge<{j},{s}>")
-            self.op_start_vars.append(start_vars)
-            self.edge_select_vars.append(select_vars)
+            self.edge_select_vars.append(edge_vars)
+
+        #bools indicating whether objective threshold is reached
+        for i, obj in enumerate(self.objectives):
+            train = self.objectives[i]["train"]
+            op = self.objectives[i]["operation"]
+            self.threshold_vars[(train, op)] = (self.model.addVar(vtype=GRB.BINARY,
+                                                          name=f"Timing on Train {train}:Operation {op}"))
+            threshold_var = self.threshold_vars[(train,op)]
+            timing = self.op_start_vars[(train, op)]
+            threshold = self.objectives[i]["threshold"]
+            eps = 0.2
+            M = 100000      #könnte abhängig von der Instanz zu Problemen führen alternativ in CPSAT mit OnlyEnforceIf
+            self.model.addConstr(timing >= threshold - M*(1-threshold_var), name=f"BigM1 Train{train}, OP{op}")
+            self.model.addConstr(timing <= threshold + eps + M*threshold_var, name=f"BigM0 Train{train}, OP{op}")
 
         self.add_path_constrains()
         self.add_timing_constraints()
@@ -80,11 +91,11 @@ class DisplibSolver:
         for i, train in enumerate(self.trains):
             for j in range(1, len(self.graphs[i].nodes)):
                 ins = self.graphs[i].in_edges(j)
-
+                #TODO: Muss auf Dict-Struktur geändert werden, oder den Zugriff in den threshold_vars mit Arrays umsetzten!
                 for in_edge in ins:
                     # Operation only may start if (selected) predecessor finished
-                    self.model.addConstr((self.op_start_vars[i][in_edge[0]] + self.trains[i][in_edge[0]]["min_duration"])
-                                            * self.edge_select_vars[i][in_edge] <= self.op_start_vars[i][j])
+                    self.model.addConstr((self.op_start_vars[(i, in_edge[0])] + self.trains[i][in_edge[0]]["min_duration"])
+                                            * self.edge_select_vars[i][in_edge] <= self.op_start_vars[(i, j)])
 
 
     def solve(self):

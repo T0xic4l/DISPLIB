@@ -1,9 +1,11 @@
 import argparse
 import json
 import gurobipy as gp
+from gurobipy import GRB
 import networkx as nx
 import matplotlib.pyplot as plt
 from tqdm import tqdm
+import numpy as np
 
 """
 Todos:
@@ -41,14 +43,14 @@ class DisplibSolver:
             # inline declaration possible if ub is infinite per default
             for j, op in enumerate(train):
                 if op["start_ub"]:
-                    start_vars.append(self.model.addVar(vtype=gp.GRB.INTEGER, lb=op["start_lb"], ub=op["start_ub"],
+                    start_vars.append(self.model.addVar(vtype=GRB.INTEGER, lb=op["start_lb"], ub=op["start_ub"],
                                                         name=f"Train {i} : Operation {j}"))
                 else:
-                    start_vars.append(self.model.addVar(vtype=gp.GRB.INTEGER, lb=op["start_lb"],
+                    start_vars.append(self.model.addVar(vtype=GRB.INTEGER, lb=op["start_lb"],
                                                         name=f"Train {i} : Operation {j}"))
 
                 for s in op["successors"]:
-                    select_vars[(j, s)] = self.model.addVar(vtype=gp.GRB.BINARY,
+                    select_vars[(j, s)] = self.model.addVar(vtype=GRB.BINARY,
                                                             name=f"Train {i} : Edge<{j},{s}>")
             self.op_start_vars.append(start_vars)
             self.edge_select_vars.append(select_vars)
@@ -114,7 +116,13 @@ class DisplibSolver:
 
     def set_timing_objective(self):
         #Done 1: set objective
-        self.model.setObjective(gp.quicksum(train[-1] for train in self.op_start_vars))
+        # todo abklären ob die letzte Operation pro Zug ausreicht, oder ob alle rein müssen
+        """sum = 0.0
+        for i, train in enumerate(self.op_start_vars):
+            sum += self.objectives[i]["coeff"] * (train[-1] - self.objectives[i]["threshold"])) * verspbool
+            sum += self.objectives[i]["increment"] * verspbool
+        self.model.setObjective(sum, GRB.MINIMIZE)
+        """
 
     def save_graphs_as_image(self, paths = False):
         for i, graph in enumerate(tqdm(self.graphs, desc="Creating Graphs")):

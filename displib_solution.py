@@ -79,6 +79,7 @@ class DisplibSolver:
         for obj in self.objectives:
             train = obj["train"]
             op = obj["operation"]
+            # If the threshold-var is false, we have to enforce that the start-time of the operation is below the threshold time
             self.model.addGenConstrIndicator(self.threshold_vars[(train, op)], False, self.op_start_vars[(train, op)] + 1, gp.GRB.LESS_EQUAL, obj["threshold"])
 
 
@@ -133,10 +134,10 @@ class DisplibSolver:
 
     def add_resource_constraints(self):
         # Note: A train may have conflicts with itself, so don't skip this case
-        # i, graph in enumerate(tqdm(self.graphs, desc="Creating Graphs"))
         for i, (res, ops) in enumerate(tqdm(self.trains_per_res.items(), desc="Adding resource-constraints")):
             if len(ops) > 1:
                 for (train_1, op_1), (train_2, op_2) in itertools.combinations(ops, 2):
+                    # Boolvars for overlapping constraints
                     z1 = self.model.addVar(vtype=gp.GRB.BINARY)
                     z2 = self.model.addVar(vtype=gp.GRB.BINARY)
 
@@ -165,6 +166,8 @@ class DisplibSolver:
 
 
     def add_deadlock_constraints(self):
+        # If there's a cycle of length 2, two operations are dependent from each other
+        # How would this scale up for larger cycles?
         for cycle in tqdm(list(nx.simple_cycles(self.res_graph, 2)), desc="Adding Deadlock-Constraints"):
             data1 = self.res_graph.edges[cycle[0], cycle[1]]["data"]
             data2 = self.res_graph.edges[cycle[1], cycle[0]]["data"]
@@ -193,6 +196,7 @@ class DisplibSolver:
                 self.model.addGenConstrIndicator(z1, True, self.op_end_vars[(t1, v)] + rt_1 <= self.op_start_vars[(t2, s)])
                 self.model.addGenConstrIndicator(z2, True, self.op_end_vars[(t2, t)] + rt_2 <= self.op_start_vars[(t1, u)])
 
+                # This enforces that the trains will not meet on this track. Either the first or second train goes through first
                 self.model.addConstr(z1 + z2 >= 1)
 
 
@@ -213,6 +217,7 @@ class DisplibSolver:
 
 
     def set_objective(self):
+        # As always, gurobi has to ruin everything. Needed to add threshold vars so everything works
         self.model.setObjective(gp.quicksum(obj["coeff"] * self.threshold_vars[(obj["train"], obj["operation"])] * (self.op_start_vars[(obj["train"], obj["operation"])] - obj["threshold"]) +
                                              obj["increment"] * self.threshold_vars[(obj["train"], obj["operation"])]
                                             for obj in self.objectives), gp.GRB.MINIMIZE)
@@ -225,13 +230,17 @@ class DisplibSolver:
             v = 0
             events.append({"time": round(self.op_start_vars[(i, v)].X), "train": i, "operation": v})
 
+            # As long as the last operation wasn't reached yet...
             while v != len(graph.nodes) - 1:
                 for succ in self.trains[i][v]["successors"]:
+                    # ...find the chosen successor-operation...
                     if round(self.edge_select_vars[i][(v, succ)].X) == 1:
                         v = succ
+                        # ...and add it to the events-list
                         events.append({"time": round(self.op_start_vars[(i, v)].X), "train": i, "operation": v})
                         break
 
+        # Sort that list by "time" in a non-descending order. This will further help, since operations at the same time will be grouped together
         return sorted(events, key=lambda x: x["time"])
 
 
@@ -240,25 +249,32 @@ class DisplibSolver:
         lhs, rhs = 0, 0
 
         while lhs < len(events):
+            # Find the intervall of events that take place at the same time
             while rhs < len(events) and events[rhs]["time"] == events[lhs]["time"]:
                 rhs += 1
 
+            # If there are at least two events at the same time, we have to make sure they are sorted correctly
             if rhs - lhs > 1:
                 topological_graph = self.create_topological_graph(events[lhs:rhs])
 
                 # workaround cuz networkx is a bitch for not having implemented connected_components for digraphs (calm down pls)
+                # Just found out about weakly_connected_components. Can't bother to change that for now (sigh)
                 connected_graph = nx.Graph()
                 connected_graph.add_nodes_from(topological_graph.nodes)
                 connected_graph.add_edges_from(topological_graph.edges)
 
                 for component in list(nx.connected_components(connected_graph)):
+                    # Create that subgraph
                     subgraph = create_subgraph(topological_graph, component)
 
+                    # Now, topologically sort it
                     for node in list(nx.topological_sort(subgraph)):
+                        # reorder the group of events and add it to the sorted list
                         sorted_events.append(events[lhs + node])
             else:
                 sorted_events.append(events[lhs])
 
+            # update the starting index to find the next group of events
             lhs = rhs
         return sorted_events
 
@@ -295,8 +311,10 @@ class DisplibSolver:
             critical_resources = []
 
             if duration > 0:
+                # If the duration is non-zero, every operation that uses one of that resources needs to happen before it
                 critical_resources.append(r["resource"] for r in self.trains[event["train"]][event["operation"]]["resources"])
             else:
+                # Else, only care about the resources with a non-zero release_time
                 critical_resources.append(r["resource"] for r in self.trains[event["train"]][event["operation"]]["resources"] if r["release_time"] > 0)
 
             for j, other in enumerate(events):
@@ -319,6 +337,7 @@ class DisplibSolver:
 
         for train, train_events in train_to_events.items():
             if len(train_events) > 1:
+                # If the same train has two events at the same time, ensure that operation n+1 happens AFTER n
                 for index1, index2 in itertools.combinations(train_events, 2):
                     if events[index1]["operation"] > events[index2]["operation"]:
                         graph.add_edge(index2, index1)

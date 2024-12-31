@@ -1,11 +1,9 @@
-import argparse
-import json
+import argparse, json, itertools
+
 import gurobipy as gp
-from gurobipy import GRB
 import networkx as nx
 import matplotlib.pyplot as plt
 from tqdm import tqdm
-import numpy as np
 
 """
 Todos:
@@ -23,126 +21,325 @@ class Instance:
         self.objectives = objectives
 
 
+class Solution:
+    def __init__(self, objective_value, events):
+        self.objective_value = objective_value
+        self.events = events
+
+
 class DisplibSolver:
     def __init__(self, instance):
         self.trains = instance.trains
         self.objectives = instance.objectives
-        self.graphs = [create_graph(train) for train in self.trains]
-
-        if args.debug:
-            self.save_graphs_as_image()
-
+        self.train_graphs = [create_train_graph(train) for train in self.trains]
         self.model = gp.Model()
-        self.op_start_vars = {}
-        self.edge_select_vars = []
-        self.threshold_vars = {}
+
+        self.trains_per_res = dict() # A mapping from a resource to a list of operations using this operation
+        self.op_start_vars = dict()
+        self.op_end_vars = dict()
+        self.edge_select_vars = list()
+        self.threshold_vars = dict()
 
         for i, train in enumerate(self.trains):
-            # inline declaration possible if ub is infinite per default
-            edge_vars = {}
-            for j, op in enumerate(train):
-                if op["start_ub"]:
-                    self.op_start_vars[(i,j)] = self.model.addVar(vtype=GRB.INTEGER, lb=op["start_lb"], ub=op["start_ub"],
-                                                        name=f"Train {i} : Operation {j}")
-                else:
-                    self.op_start_vars[(i, j)] = self.model.addVar(vtype=GRB.INTEGER, lb=op["start_lb"],
-                                                        name=f"Train {i} : Operation {j}")
-                for s in op["successors"]:
-                    edge_vars[(j, s)] = self.model.addVar(vtype=GRB.BINARY,
-                                                            name=f"Train {i} : Edge<{j},{s}>")
-            self.edge_select_vars.append(edge_vars)
+            select_vars = {}
 
-        #bools indicating whether objective threshold is reached
-        for i, obj in enumerate(self.objectives):
-            train = self.objectives[i]["train"]
-            op = self.objectives[i]["operation"]
-            self.threshold_vars[(train, op)] = (self.model.addVar(vtype=GRB.BINARY,
-                                                          name=f"Timing on Train {train}:Operation {op}"))
-            threshold_var = self.threshold_vars[(train,op)]
-            timing = self.op_start_vars[(train, op)]
-            threshold = self.objectives[i]["threshold"]
-            eps = 0.2
-            M = 100000      #könnte abhängig von der Instanz zu Problemen führen alternativ in CPSAT mit OnlyEnforceIf
-            self.model.addConstr(timing >= threshold - M*(1-threshold_var), name=f"BigM1 Train{train}, OP{op}")
-            self.model.addConstr(timing <= threshold + eps + M*threshold_var, name=f"BigM0 Train{train}, OP{op}")
+            # inline declaration possible if ub is infinite per default
+            for j, op in enumerate(train):
+                self.op_start_vars[(i, j)] = self.model.addVar(vtype=gp.GRB.INTEGER, name=f"Start of Train {i} : Operation {j}")
+                self.op_end_vars[(i, j)] = self.model.addVar(vtype=gp.GRB.INTEGER, name=f"End of Train {i} : Operation {j}")
+
+                # Create a mapping that maps a ressource to the list of operations using that ressource
+                for res in op["resources"]:
+                    if res["resource"] in self.trains_per_res.keys():
+                        self.trains_per_res[res["resource"]].append((i,j))
+                    else:
+                        self.trains_per_res[res["resource"]] = [(i,j)]
+
+                for s in op["successors"]:
+                    select_vars[(j, s)] = self.model.addVar(vtype=gp.GRB.BINARY,
+                                                            name=f"Train {i} : Edge<{j},{s}>")
+            self.edge_select_vars.append(select_vars)
+
+            for obj in self.objectives:
+                self.threshold_vars[(obj["train"], obj["operation"])] = self.model.addVar(vtype=gp.GRB.BINARY, name=f"Threshold of Train {obj["train"]} : Operation {obj["operation"]}")
+
+        self.res_graph = create_res_graph(self.trains, self.trains_per_res.keys())
+
+        self.add_threshold_constraints()
 
         self.add_path_constrains()
         self.add_timing_constraints()
+        self.add_resource_constraints()
+        self.add_deadlock_constraints()
+
+        self.set_objective()
+
+
+    def add_threshold_constraints(self):
+        for obj in self.objectives:
+            train = obj["train"]
+            op = obj["operation"]
+            self.model.addGenConstrIndicator(self.threshold_vars[(train, op)], False, self.op_start_vars[(train, op)] + 1, gp.GRB.LESS_EQUAL, obj["threshold"])
 
 
     def add_path_constrains(self):
-        for i, train in enumerate(self.trains):
+        for i, train in tqdm(enumerate(self.trains), desc="Adding path-constraints"):
             # exactly one out_edge for first operation, one in_edge for last operation
             self.model.addConstr(gp.quicksum(self.edge_select_vars[i][out_edge]
-                                             for out_edge in self.graphs[i].out_edges(0)) == 1)
+                                             for out_edge in self.train_graphs[i].out_edges(0)) == 1)
 
             self.model.addConstr(gp.quicksum(self.edge_select_vars[i][in_edge]
-                                             for in_edge in self.graphs[i].in_edges(len(self.graphs[i].nodes) - 1)) == 1)
+                                             for in_edge in self.train_graphs[i].in_edges(len(self.train_graphs[i].nodes) - 1)) == 1)
 
-            # If a vertex is not the first nor the last one, make sure the number of in egdes is equal to the number of out edges
+            # If a vertex is not the first nor the last one, make sure the number of in edges is equal to the number of out edges
             # Not necessary to make sure there's max. 1 in_/out_edges selected, because first and last op already have only 1 edge selected
-            for j in range(1, len(self.graphs[i].nodes) - 1):
-                ins = self.graphs[i].in_edges(j)
-                outs = self.graphs[i].out_edges(j)
-                self.model.addConstr(gp.quicksum(self.edge_select_vars[i][in_edge] for in_edge in ins) ==
+            for j in range(1, len(self.train_graphs[i].nodes) - 1):
+                ins = self.train_graphs[i].in_edges(j)
+                outs = self.train_graphs[i].out_edges(j)
+                self.model.addLConstr(gp.quicksum(self.edge_select_vars[i][in_edge] for in_edge in ins) ==
                                      gp.quicksum(self.edge_select_vars[i][out_edge] for out_edge in outs))
 
+
     def add_timing_constraints(self):
-        for i, train in enumerate(self.trains):
-            for j in range(1, len(self.graphs[i].nodes)):
-                ins = self.graphs[i].in_edges(j)
-                #TODO: Muss auf Dict-Struktur geändert werden, oder den Zugriff in den threshold_vars mit Arrays umsetzten!
-                for in_edge in ins:
-                    # Operation only may start if (selected) predecessor finished
-                    self.model.addConstr((self.op_start_vars[(i, in_edge[0])] + self.trains[i][in_edge[0]]["min_duration"])
-                                            * self.edge_select_vars[i][in_edge] <= self.op_start_vars[(i, j)])
+        # Guarantee that every operation cannot start before the chosen predecessor (start + min_duration as a lower bound)
+        for i, train in tqdm(enumerate(self.trains), desc="Adding timing-constraints"):
+            # Since every train has to choose the first operation, enforce lower and upper bounds
+            self.model.addLConstr(self.op_start_vars[(i, 0)] - self.trains[i][0]["start_lb"] >= 0)
+            if self.trains[i][0]["start_ub"] is not None:
+                self.model.addLConstr(self.op_start_vars[(i, 0)] - self.trains[i][0]["start_ub"] <= 0)
+
+            for op in range(1, len(self.train_graphs[i].nodes)):
+                for in_edge in self.train_graphs[i].in_edges(op):
+                    # If operation is chosen, successor may only start after at least start_var + min_duration
+                    self.model.addGenConstrIndicator(self.edge_select_vars[i][in_edge], True, self.op_start_vars[(i, in_edge[0])] + self.trains[i][in_edge[0]]["min_duration"] <= self.op_start_vars[(i, op)])
+
+                    # Since this is not the first operation, iterating over in_edges will suffice.
+                    self.model.addGenConstrIndicator(self.edge_select_vars[i][in_edge], True, self.op_start_vars[(i, op)] - self.trains[i][op]["start_lb"], gp.GRB.GREATER_EQUAL, 0)
+                    if self.trains[i][op]["start_ub"] is not None:
+                        self.model.addGenConstrIndicator(self.edge_select_vars[i][in_edge], True, self.op_start_vars[(i, op)] - self.trains[i][op]["start_ub"], gp.GRB.LESS_EQUAL, 0)
+
+                for out_edge in self.train_graphs[i].out_edges(op):
+                    # Operation ends when successor operation starts
+                    self.model.addGenConstrIndicator(self.edge_select_vars[i][out_edge], True, self.op_end_vars[(i, op)] - self.op_start_vars[(i, out_edge[1])], gp.GRB.EQUAL, 0)
+
+            '''
+            # Since every train has to choose the last operation, enforce lower and upper bounds
+            last_op = len(self.graphs[i].nodes) - 1
+            self.model.addLConstr(self.op_start_vars[(i, last_op)] - self.trains[i][0]["start_lb"], gp.GRB.GREATER_EQUAL, 0)
+            if self.trains[i][last_op]["start_ub"] is not None:
+            self.model.addLConstr(self.op_start_vars[(i, last_op)] - self.trains[i][last_op]["start_ub"], gp.GRB.LESS_EQUAL, 0)
+            '''
+
+
+    def add_resource_constraints(self):
+        # Note: A train may have conflicts with itself, so don't skip this case
+        # i, graph in enumerate(tqdm(self.graphs, desc="Creating Graphs"))
+        for i, (res, ops) in enumerate(tqdm(self.trains_per_res.items(), desc="Adding resource-constraints")):
+            if len(ops) > 1:
+                for (train_1, op_1), (train_2, op_2) in itertools.combinations(ops, 2):
+                    z1 = self.model.addVar(vtype=gp.GRB.BINARY)
+                    z2 = self.model.addVar(vtype=gp.GRB.BINARY)
+
+                    rt_1 = 0
+                    # search for the resource that this operation uses (multiple resources per operation possible)
+                    for op_res in self.trains[train_1][op_1]["resources"]:
+                        if op_res["resource"] == res:
+                            rt_1 = op_res["release_time"]
+
+                    rt_2 = 0
+                    # search for the resource that this operation uses (multiple resources per operation possible)
+                    for op_res in self.trains[train_2][op_2]["resources"]:
+                        if op_res["resource"] == res:
+                            rt_2 = op_res["release_time"]
+
+                    # z1 => end1 + rt1 <= start2   ;   z2 => end2 + rt2 <= start1
+                    self.model.addGenConstrIndicator(z1, True, self.op_end_vars[(train_1, op_1)] + rt_1 <= self.op_start_vars[(train_2, op_2)])
+                    self.model.addGenConstrIndicator(z2, True, self.op_end_vars[(train_2, op_2)] + rt_2 <= self.op_start_vars[(train_1, op_1)])
+                    # (Is logical equivalence required?! I guess not. The solver has to pick z1 or z2
+                    # and therefore at least one inequality has to be satified)
+
+                    # We solve resource-conflicts, if z1 or z2 is true: And we don't force trains to take a certain
+                    # path, because start1, end1 is free, if op1 is not taken (same for z2), so the solver can always
+                    # satisfy the constraint by just picking a start and an end
+                    self.model.addConstr(z1 + z2 >= 1)
+
+
+    def add_deadlock_constraints(self):
+        for cycle in tqdm(list(nx.simple_cycles(self.res_graph, 2)), desc="Adding Deadlock-Constraints"):
+            data1 = self.res_graph.edges[cycle[0], cycle[1]]["data"]
+            data2 = self.res_graph.edges[cycle[1], cycle[0]]["data"]
+
+            for (t1, (u, v)), (t2, (s, t)) in list(itertools.product(data1, data2)):
+                # no deadlock in same train possible
+                if t1 == t2:
+                    continue
+
+                # if not the same train, avoid deadlock by making u,v | s,t atomic
+                z1 = self.model.addVar(vtype=gp.GRB.BINARY)
+                z2 = self.model.addVar(vtype=gp.GRB.BINARY)
+
+                rt_1 = 0
+                # search for the resource that this operation uses (multiple resources per operation possible)
+                for op_res in self.trains[t1][v]["resources"]:
+                    if op_res["resource"] == cycle[1]:
+                        rt_1 = op_res["release_time"]
+
+                rt_2 = 0
+                # search for the resource that this operation uses (multiple resources per operation possible)
+                for op_res in self.trains[t2][t]["resources"]:
+                    if op_res["resource"] == cycle[0]:
+                        rt_2 = op_res["release_time"]
+
+                self.model.addGenConstrIndicator(z1, True, self.op_end_vars[(t1, v)] + rt_1 <= self.op_start_vars[(t2, s)])
+                self.model.addGenConstrIndicator(z2, True, self.op_end_vars[(t2, t)] + rt_2 <= self.op_start_vars[(t1, u)])
+
+                self.model.addConstr(z1 + z2 >= 1)
 
 
     def solve(self):
         self.model.optimize()
 
-        if args.debug:
-            self.save_graphs_as_image(True)
+        if self.model.status == gp.GRB.OPTIMAL:
+            if args.debug:
+                self.save_train_graphs_as_image()
+                self.save_res_graph_as_image()
+            print(f"Optimal Solution found with objective value found of {self.model.objVal}")
 
-        # Just to check for now
-        #todo 2: ordentliche Ausgabe
-        events = [  {"time": 0, "train": 0, "operation": 0},
-                    {"time": 0, "train": 1, "operation": 0},
-                    {"time": 5, "train": 0, "operation": 2},
-                    {"time": 5, "train": 1, "operation": 1},
-                    {"time": 10, "train": 1, "operation": 2},
-                    {"time": 10, "train": 0, "operation": 3}]
+            events = self.topological_sorted_events(self.get_events())
+            return Solution(round(self.model.objVal), events)
+        else:
+            print(f"Model is infeasible!")
+            return Solution(-1, [])
 
-        """
+
+    def set_objective(self):
+        self.model.setObjective(gp.quicksum(obj["coeff"] * self.threshold_vars[(obj["train"], obj["operation"])] * (self.op_start_vars[(obj["train"], obj["operation"])] - obj["threshold"]) +
+                                             obj["increment"] * self.threshold_vars[(obj["train"], obj["operation"])]
+                                            for obj in self.objectives), gp.GRB.MINIMIZE)
+
+
+    def get_events(self):
         events = []
-        for i, train in enumerate(self.op_start_vars):
-            for j, op in enumerate(train):
-                #todo aktuell y bekommen, oder anders schreiben
-                if self.edge_select_vars[i][(y, j)].X > 0.5:
-                    event = {"time": int(round(op.X)), "train": i, "operation": j}
-                    events.append(event)
-        """
+        for i, graph in enumerate(tqdm(self.train_graphs, desc="Creating events")):
+            # This marks the start of the algorithm
+            v = 0
+            events.append({"time": round(self.op_start_vars[(i, v)].X), "train": i, "operation": v})
 
-        return Solution(10, events)
+            while v != len(graph.nodes) - 1:
+                for succ in self.trains[i][v]["successors"]:
+                    if round(self.edge_select_vars[i][(v, succ)].X) == 1:
+                        v = succ
+                        events.append({"time": round(self.op_start_vars[(i, v)].X), "train": i, "operation": v})
+                        break
 
-    def set_timing_objective(self):
-        #Done 1: set objective
-        # todo abklären ob die letzte Operation pro Zug ausreicht, oder ob alle rein müssen
-        """sum = 0.0
-        for i, train in enumerate(self.op_start_vars):
-            sum += self.objectives[i]["coeff"] * (train[-1] - self.objectives[i]["threshold"])) * verspbool
-            sum += self.objectives[i]["increment"] * verspbool
-        self.model.setObjective(sum, GRB.MINIMIZE)
-        """
+        return sorted(events, key=lambda x: x["time"])
 
-    def save_graphs_as_image(self, paths = False):
-        for i, graph in enumerate(tqdm(self.graphs, desc="Creating Graphs")):
+
+    def topological_sorted_events(self, events):
+        sorted_events = []
+        lhs, rhs = 0, 0
+
+        while lhs < len(events):
+            while rhs < len(events) and events[rhs]["time"] == events[lhs]["time"]:
+                rhs += 1
+
+            if rhs - lhs > 1:
+                topological_graph = self.create_topological_graph(events[lhs:rhs])
+
+                # workaround cuz networkx is a bitch for not having implemented connected_components for digraphs (calm down pls)
+                connected_graph = nx.Graph()
+                connected_graph.add_nodes_from(topological_graph.nodes)
+                connected_graph.add_edges_from(topological_graph.edges)
+
+                for component in list(nx.connected_components(connected_graph)):
+                    subgraph = create_subgraph(topological_graph, component)
+
+                    for node in list(nx.topological_sort(subgraph)):
+                        sorted_events.append(events[lhs + node])
+            else:
+                sorted_events.append(events[lhs])
+
+            lhs = rhs
+        return sorted_events
+
+
+    def create_topological_graph(self, events):
+        # create a graph that represents the dependencies between operations: Graph may not be connected !!!
+        graph = nx.DiGraph()
+        graph.add_nodes_from(range(len(events)))
+
+        # Add predecessor-edges
+        for i, event in enumerate(events):
+            # Retrieve the resources that need to be freed, so that the given operation can happen
+            needed_resources = [res["resource"] for res in self.trains[event["train"]][event["operation"]]["resources"]]
+
+            # Get the indices of events that need to take place before, so their predecessors resources are freed
+            for j, other in enumerate(events):
+                predecessor = self.get_predecessor(other["train"], other["operation"])
+
+                # Of course an event is self-dependent. Skip that case to avoid self-loops. Otherwise, sorting will not work!
+                if i == j or predecessor is None or event["train"] == other["train"]:
+                    continue
+
+                predecessor_resources = [res["resource"] for res in self.trains[other["train"]][predecessor]["resources"]]
+
+                # If a predecessor of one of these events that took a needed resource, make sure the event takes place before the other event
+                for res in needed_resources:
+                    if res in predecessor_resources:
+                        graph.add_edge(j, i)
+                        break
+
+        # Add priority-edges for same resources
+        for i, event in enumerate(events):
+            duration = round(self.op_end_vars[(event["train"], event["operation"])].X) - round(self.op_end_vars[(event["train"], event["operation"])].X)
+            critical_resources = []
+
+            if duration > 0:
+                critical_resources.append(r["resource"] for r in self.trains[event["train"]][event["operation"]]["resources"])
+            else:
+                critical_resources.append(r["resource"] for r in self.trains[event["train"]][event["operation"]]["resources"] if r["release_time"] > 0)
+
+            for j, other in enumerate(events):
+                if i == j or event["train"] == other["train"]:
+                    continue
+
+                # find other events j with same resource
+                for other_r in self.trains[other["train"]][other["operation"]]["resources"]:
+                    if other_r["resource"] in critical_resources:
+                        graph.add_edge(j, i)
+                        break
+
+        # Add chronological-edges
+        train_to_events = dict()
+        for i, event in enumerate(events):
+            if event["train"] in train_to_events.keys():
+                train_to_events[event["train"]].append(i)
+            else:
+                train_to_events[event["train"]] = [i]
+
+        for train, train_events in train_to_events.items():
+            if len(train_events) > 1:
+                for index1, index2 in itertools.combinations(train_events, 2):
+                    if events[index1]["operation"] > events[index2]["operation"]:
+                        graph.add_edge(index2, index1)
+                    else:
+                        graph.add_edge(index1, index2)
+
+        return graph
+
+
+    def get_predecessor(self, train, op):
+        for in_edge in self.train_graphs[train].in_edges(op):
+            if round(self.edge_select_vars[train][in_edge].X) == 1:
+                return in_edge[0]
+
+
+    def save_train_graphs_as_image(self):
+        for i, graph in enumerate(tqdm(self.train_graphs, desc="Creating Graphs")):
             colors = []
-            if paths:
-                for e in self.edge_select_vars[i].items():
-                    colors.append("red" if e[1].X == 1.0 else "gray")
 
-
+            for e in self.edge_select_vars[i].items():
+                colors.append((200/255, 0, 0) if round(e[1].X) == 1.0 else (180/255, 180/255, 180/255))
 
             depth = nx.single_source_shortest_path_length(graph, 0)
 
@@ -164,22 +361,49 @@ class DisplibSolver:
                 graph,
                 pos,
                 with_labels=True,
-                node_size=700,
-                node_color="lightblue",
+                node_size=500,
                 font_size=10,
+                arrowsize=10,
+                node_color="lightgray",
                 font_color="black",
-                edge_color=colors if paths else "gray",
-                arrows=True,
-                arrowsize=20
+                edge_color=colors,
+                arrows=True
             )
 
-            plt.savefig(f"Graphs/graph{i}.png", format="png")
+            plt.savefig(f"Graphs/Train_{i}.png", format="png")
             plt.close()
 
-class Solution:
-    def __init__(self, objective_value, events):
-        self.objective_value = objective_value
-        self.events = events
+
+    def save_res_graph_as_image(self):
+        pos = nx.spring_layout(self.res_graph, seed=42)
+
+        cycles = list(nx.simple_cycles(self.res_graph, 2))
+        cycle_edges = [edge for cycle in cycles for edge in zip(cycle, cycle[1:] + [cycle[0]])]
+
+        plt.figure(figsize=(40, 40))
+        nx.draw(
+            self.res_graph,
+            pos,
+            with_labels=True,
+            node_size=500,
+            font_size=10,
+            arrowsize=10,
+            node_color="lightgray",
+            font_color="black",
+            edge_color="lightgray",
+            arrows=True
+        )
+
+        nx.draw_networkx_edges(
+            self.res_graph,
+            pos,
+            edgelist=cycle_edges,
+            edge_color="red",
+            width=3.0
+        )
+
+        plt.savefig(f"Graphs/Resource_Graph.png", format="png")
+        plt.close()
 
 
 def main():
@@ -189,24 +413,46 @@ def main():
     except FileNotFoundError:
         print(f"File {args.instance} was not found")
         return
-    except json.JSONDecodeError:
-        print(f"File {args.instance} could not be decoded")
-        return
 
     instance = parse_instance(instance)
-
     solver = DisplibSolver(instance)
-    solver.set_timing_objective()
     solution = solver.solve()
     write_solution_to_file(solution)
 
 
-def create_graph(train):
+def create_train_graph(train):
     graph = nx.DiGraph()
     graph.add_nodes_from([i for i, _ in enumerate(train)])
 
     for i, operation in enumerate(train):
         graph.add_edges_from([(i, v) for v in operation["successors"]])
+    return graph
+
+
+def create_subgraph(graph : nx.DiGraph, nodes):
+    subgraph = nx.DiGraph()
+    subgraph.add_nodes_from(nodes)
+    subgraph.add_edges_from([edge for edge in graph.edges if edge[0] in nodes and edge[1] in nodes])
+    return subgraph
+
+
+def create_res_graph(trains, resources):
+    graph = nx.DiGraph()
+    graph.add_nodes_from(resources)
+
+    for i, train in enumerate(trains):
+        for j, op in enumerate(train):
+            for res in op["resources"]:
+                for succ in op["successors"]:
+                    for succ_res in train[succ]["resources"]:
+                        edge = (res["resource"], succ_res["resource"])
+                        if edge in graph.edges:
+                            edge_data = graph[edge[0]][edge[1]].get("data", [])
+                            edge_data.append((i, (j, succ)))
+                            graph[edge[0]][edge[1]]["data"] = edge_data
+                        else:
+                            graph.add_edge(res["resource"], succ_res["resource"], data=[(i, (j, succ))])
+
     return graph
 
 

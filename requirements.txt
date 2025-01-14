@@ -3,3 +3,4 @@ argparse>=1.4.0
 gurobipy>=12.0.0
 matplotlib>=3.9.3
 tqdm>=4.67.1
+ortools

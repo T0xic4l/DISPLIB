@@ -46,7 +46,7 @@ class DisplibSolver:
             # inline declaration possible if ub is infinite per default
             for j, op in enumerate(train):
                 self.op_start_vars[(i, j)] = self.model.addVar(vtype=gp.GRB.INTEGER, name=f"Start of Train {i} : Operation {j}")
-                self.op_end_vars[(i, j)] = self.model.addVar(vtype=gp.GRB.INTEGER, name=f"End of Train {i} : Operation {j}")
+                self.op_end_vars[(i, j)] = self.model.addVar(vtype=gp.GRB.INTEGER, name=f"End of Train {i} : Operation {j}", lb= op["start:lb"] + op["min_duration"])
 
                 # Create a mapping that maps a ressource to the list of operations using that ressource
                 for res in op["resources"]:
@@ -65,14 +65,14 @@ class DisplibSolver:
 
         self.res_graph = create_res_graph(self.trains, self.trains_per_res.keys())
 
-        self.add_threshold_constraints()
+        # self.add_threshold_constraints()
 
-        self.add_path_constrains()
+        self.add_path_constraints()
         self.add_timing_constraints()
         self.add_resource_constraints()
-        self.add_deadlock_constraints()
+        # self.add_deadlock_constraints()
 
-        self.set_objective()
+        # self.set_objective()
 
 
     def add_threshold_constraints(self):
@@ -83,7 +83,7 @@ class DisplibSolver:
             self.model.addGenConstrIndicator(self.threshold_vars[(train, op)], False, self.op_start_vars[(train, op)] + 1, gp.GRB.LESS_EQUAL, obj["threshold"])
 
 
-    def add_path_constrains(self):
+    def add_path_constraints(self):
         for i, train in tqdm(enumerate(self.trains), desc="Adding path-constraints"):
             # exactly one out_edge for first operation, one in_edge for last operation
             self.model.addConstr(gp.quicksum(self.edge_select_vars[i][out_edge]
@@ -137,21 +137,16 @@ class DisplibSolver:
         for i, (res, ops) in enumerate(tqdm(self.trains_per_res.items(), desc="Adding resource-constraints")):
             if len(ops) > 1:
                 for (train_1, op_1), (train_2, op_2) in itertools.combinations(ops, 2):
+                    if train_1 == train_2:
+                        continue
+
                     # Boolvars for overlapping constraints
                     z1 = self.model.addVar(vtype=gp.GRB.BINARY)
                     z2 = self.model.addVar(vtype=gp.GRB.BINARY)
 
-                    rt_1 = 0
                     # search for the resource that this operation uses (multiple resources per operation possible)
-                    for op_res in self.trains[train_1][op_1]["resources"]:
-                        if op_res["resource"] == res:
-                            rt_1 = op_res["release_time"]
-
-                    rt_2 = 0
-                    # search for the resource that this operation uses (multiple resources per operation possible)
-                    for op_res in self.trains[train_2][op_2]["resources"]:
-                        if op_res["resource"] == res:
-                            rt_2 = op_res["release_time"]
+                    rt_1 = self.find_release_time(train_1, op_1, res)
+                    rt_2 = self.find_release_time(train_2, op_2, res)
 
                     # z1 => end1 + rt1 <= start2   ;   z2 => end2 + rt2 <= start1
                     self.model.addGenConstrIndicator(z1, True, self.op_end_vars[(train_1, op_1)] + rt_1 <= self.op_start_vars[(train_2, op_2)])
@@ -169,6 +164,9 @@ class DisplibSolver:
         # If there's a cycle of length 2, two operations are dependent from each other
         # How would this scale up for larger cycles?
         for cycle in tqdm(list(nx.simple_cycles(self.res_graph, 2)), desc="Adding Deadlock-Constraints"):
+            if len(cycle) < 2:
+                continue
+
             data1 = self.res_graph.edges[cycle[0], cycle[1]]["data"]
             data2 = self.res_graph.edges[cycle[1], cycle[0]]["data"]
 
@@ -181,26 +179,24 @@ class DisplibSolver:
                 z1 = self.model.addVar(vtype=gp.GRB.BINARY)
                 z2 = self.model.addVar(vtype=gp.GRB.BINARY)
 
-                rt_1 = 0
-                # search for the resource that this operation uses (multiple resources per operation possible)
-                for op_res in self.trains[t1][v]["resources"]:
-                    if op_res["resource"] == cycle[1]:
-                        rt_1 = op_res["release_time"]
-
-                rt_2 = 0
-                # search for the resource that this operation uses (multiple resources per operation possible)
-                for op_res in self.trains[t2][t]["resources"]:
-                    if op_res["resource"] == cycle[0]:
-                        rt_2 = op_res["release_time"]
-
-                self.model.addGenConstrIndicator(z1, True, self.op_end_vars[(t1, v)] + rt_1 <= self.op_start_vars[(t2, s)])
-                self.model.addGenConstrIndicator(z2, True, self.op_end_vars[(t2, t)] + rt_2 <= self.op_start_vars[(t1, u)])
+                self.model.addGenConstrIndicator(z1, True, self.op_end_vars[(t1, v)] <= self.op_start_vars[(t2, s)])
+                self.model.addGenConstrIndicator(z2, True, self.op_end_vars[(t2, t)] <= self.op_start_vars[(t1, u)])
 
                 # This enforces that the trains will not meet on this track. Either the first or second train goes through first
                 self.model.addConstr(z1 + z2 >= 1)
 
 
+    def find_release_time(self, train, operation, resource):
+        for op_res in self.trains[train][operation]["resources"]:
+            if op_res["resource"] == resource:
+                return op_res["release_time"]
+
+        return 0
+
+
     def solve(self):
+        self.model.params.MIPGap = 0.50
+        self.model.params.MIPFocus = 1
         self.model.optimize()
 
         if self.model.status == gp.GRB.OPTIMAL:

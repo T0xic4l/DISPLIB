@@ -46,7 +46,7 @@ class DisplibSolver:
             # inline declaration possible if ub is infinite per default
             for j, op in enumerate(train):
                 self.op_start_vars[(i, j)] = self.model.addVar(vtype=gp.GRB.INTEGER, name=f"Start of Train {i} : Operation {j}")
-                self.op_end_vars[(i, j)] = self.model.addVar(vtype=gp.GRB.INTEGER, name=f"End of Train {i} : Operation {j}", lb= op["start:lb"] + op["min_duration"])
+                self.op_end_vars[(i, j)] = self.model.addVar(vtype=gp.GRB.INTEGER, name=f"End of Train {i} : Operation {j}", lb= op["start_lb"] + op["min_duration"])
 
                 # Create a mapping that maps a ressource to the list of operations using that ressource
                 for res in op["resources"]:
@@ -65,14 +65,14 @@ class DisplibSolver:
 
         self.res_graph = create_res_graph(self.trains, self.trains_per_res.keys())
 
-        # self.add_threshold_constraints()
+        self.add_threshold_constraints()
 
         self.add_path_constraints()
         self.add_timing_constraints()
         self.add_resource_constraints()
-        # self.add_deadlock_constraints()
+        self.add_deadlock_constraints()
 
-        # self.set_objective()
+        self.set_objective()
 
 
     def add_threshold_constraints(self):
@@ -195,8 +195,6 @@ class DisplibSolver:
 
 
     def solve(self):
-        self.model.params.MIPGap = 0.50
-        self.model.params.MIPFocus = 1
         self.model.optimize()
 
         if self.model.status == gp.GRB.OPTIMAL:

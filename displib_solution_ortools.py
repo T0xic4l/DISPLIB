@@ -41,6 +41,9 @@ class DisplibSolver:
 
                 # Create a mapping that maps a ressource to the list of operations using that ressource
                 for res in op["resources"]:
+                    if res["release_time"] == 0:
+                        res["release_time"] = self.model.NewBoolVar(name=f"rt for {(i, j)} : res {res}")
+
                     if res["resource"] in self.trains_per_res.keys():
                         self.trains_per_res[res["resource"]].append((i,j))
                     else:
@@ -56,13 +59,13 @@ class DisplibSolver:
                 else:
                     self.threshold_vars[obj["train"], obj["operation"]] = self.model.NewBoolVar(name=f"Threshold of Train {obj["train"]} : Operation {obj["operation"]}")
 
-        self.res_graph = create_res_graph(self.trains, self.trains_per_res.keys())
+        self.res_graph = create_deadlock_graph(self.trains, self.trains_per_res.keys())
 
         self.add_threshold_constraints()
         self.add_path_constraints()
         self.add_timing_constraints()
         self.add_resource_constraints()
-        # self.add_deadlock_constraints()
+        self.add_deadlock_constraints()
 
         self.set_objective()
 
@@ -141,18 +144,24 @@ class DisplibSolver:
                     rt_1 = self.find_release_time(train_1, op_1, res)
                     rt_2 = self.find_release_time(train_2, op_2, res)
 
+                    end_1 = self.model.NewIntVar(lb=0, ub=2**20, name="Placeholder var")
+                    end_2 = self.model.NewIntVar(lb=0, ub=2**20, name="Placeholder var")
+
+                    self.model.add(end_1 == self.op_end_vars[train_1, op_1] + rt_1)
+                    self.model.add(end_2 ==self.op_end_vars[train_2, op_2] + rt_2)
+
                     size_1 = self.model.new_int_var(lb=0, ub=2**20, name="Placeholder var")
                     size_2 = self.model.new_int_var(lb=0, ub=2**20, name="Placeholder var")
 
 
                     interval_1 = self.model.NewOptionalIntervalVar(start=self.op_start_vars[train_1, op_1],
-                                                      end=self.op_end_vars[train_1, op_1] + rt_1,
-                                                      size= size_1,
+                                                      end=end_1,
+                                                      size=size_1,
                                                       is_present=op_1_chosen,
                                                       name=f"Interval for Train {train_1} : Operation {op_1}")
 
                     interval_2 = self.model.NewOptionalIntervalVar(start=self.op_start_vars[train_2, op_2],
-                                                      end=self.op_end_vars[train_2, op_2] + rt_2,
+                                                      end=end_2,
                                                       size=size_2,
                                                       is_present=op_2_chosen,
                                                       name=f"Interval for Train {train_2} : Operation {op_2}")
@@ -161,7 +170,30 @@ class DisplibSolver:
 
 
     def add_deadlock_constraints(self):
-        return
+        for cycle in tqdm(list(nx.simple_cycles(self.res_graph)), desc="Adding Deadlock-Constraints"):
+            edges = []
+            for edge in itertools.pairwise(cycle + [cycle[0]]):
+                edge_data = self.res_graph[edge[0]][edge[1]].get("data", [])
+                edges.append([(u,v,edge[0]) for u,v in edge_data])
+
+            # sort edges by amount of trains
+            edges.sort(key=lambda l: len(set([train for train, op, res in l])))
+            
+            # Do a quick pre-check to find cycles that would never create a deadlock
+            if func_a(edges):
+                continue
+
+            self.func_b(edges, [], 0)
+
+
+    def func_b(self, edges, current_tuple, depth):
+        if depth == len(edges):
+            self.model.add(sum(self.find_release_time(train, op, res) for train, op, res in current_tuple) >= 1)
+            return
+
+        for train_1, op_1, res_1 in edges[depth]:
+            if all(train_1 != train_2 for train_2, op_2, res_2 in current_tuple):
+                self.func_b(edges, current_tuple + [(train_1, op_1, res_1)], depth + 1)
 
 
     def set_objective(self):
@@ -169,13 +201,15 @@ class DisplibSolver:
 
 
     def solve(self):
+        if args.debug:
+            self.save_res_graph_as_image()
+
         self.solver.parameters.log_search_progress = True
 
         status = self.solver.Solve(self.model)
         if status == cp.OPTIMAL or status == cp.FEASIBLE:
             if args.debug:
                 self.save_train_graphs_as_image()
-                self.save_res_graph_as_image()
             print(f"Optimal Solution found with objective value found of {round(self.solver.objective_value)}")
 
             events = self.topological_sorted_events(self.get_events())
@@ -276,8 +310,16 @@ class DisplibSolver:
                 # If the duration is non-zero, every operation that uses one of that resources needs to happen before it
                 critical_resources.append(r["resource"] for r in self.trains[event["train"]][event["operation"]]["resources"])
             else:
-                # Else, only care about the resources with a non-zero release_time
-                critical_resources.append(r["resource"] for r in self.trains[event["train"]][event["operation"]]["resources"] if r["release_time"] > 0)
+                for r in self.trains[event["train"]][event["operation"]]["resources"]:
+                    rt = 0
+                    if type(r["release_time"]) != int:
+                        rt = self.solver.value(r["release_time"])
+                    else:
+                        rt = r["release_time"]
+
+                    # Else, only care about the resources with a non-zero release_time
+                    if rt > 0:
+                        critical_resources.append(r["resource"])
 
             for j, other in enumerate(events):
                 if i == j or event["train"] == other["train"]:
@@ -397,7 +439,7 @@ class DisplibSolver:
 
 def main():
     try:
-        with open(f"Instances/{args.instance}", 'r') as file:
+        with open(f"Testing/Instances/{args.instance}", 'r') as file:
             instance = json.load(file)
     except FileNotFoundError:
         print(f"File {args.instance} was not found")
@@ -425,24 +467,45 @@ def create_subgraph(graph : nx.DiGraph, nodes):
     return subgraph
 
 
-def create_res_graph(trains, resources):
+def create_deadlock_graph(trains, resources):
     graph = nx.DiGraph()
-    graph.add_nodes_from(resources)
 
     for i, train in enumerate(trains):
         for j, op in enumerate(train):
             for res in op["resources"]:
+                # This is crucial for our idea: If the release time for this resource is greater than 0, the resource will be blocked although
+                # the next operation has already started. This means that a deadlock would not be possible. Just don't draw the edge for that case
+                if type(res["release_time"]) == int:
+                   continue
+
                 for succ in op["successors"]:
                     for succ_res in train[succ]["resources"]:
                         edge = (res["resource"], succ_res["resource"])
+
+                        if edge[0] == edge[1]:
+                            continue
                         if edge in graph.edges:
                             edge_data = graph[edge[0]][edge[1]].get("data", [])
-                            edge_data.append((i, (j, succ)))
+                            edge_data.append((i, j))
                             graph[edge[0]][edge[1]]["data"] = edge_data
                         else:
-                            graph.add_edge(res["resource"], succ_res["resource"], data=[(i, (j, succ))])
+                            graph.add_nodes_from([res["resource"], succ_res["resource"]])
+                            graph.add_edge(edge[0], edge[1], data=[(i, j)])
 
     return graph
+
+
+def func_a(edges):
+    '''
+    FIND MORE CRITERIA!!!
+    '''
+    unique_ids = set()
+    for i, edge in enumerate(edges, 1):
+        for train, op, res in edge:
+            unique_ids.add(train)
+        if len(unique_ids) < i:
+            return True
+    return False
 
 
 def write_solution_to_file(solution : Solution):

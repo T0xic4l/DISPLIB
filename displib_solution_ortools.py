@@ -17,6 +17,11 @@ class Solution:
         self.objective_value = objective_value
         self.events = events
 
+class Log:
+    def __init__(self, status_code, best_bound):
+        self.status_code = status_code
+        self.best_bound = best_bound
+
 
 class DisplibSolver:
     def __init__(self, instance):
@@ -180,20 +185,20 @@ class DisplibSolver:
             edges.sort(key=lambda l: len(set([train for train, op, res in l])))
             
             # Do a quick pre-check to find cycles that would never create a deadlock
-            if func_a(edges):
+            if pre_check_list(edges):
                 continue
 
-            self.func_b(edges, [], 0)
+            self.find_cycle_tuple(edges, [], 0)
 
 
-    def func_b(self, edges, current_tuple, depth):
+    def find_cycle_tuple(self, edges, current_tuple, depth):
         if depth == len(edges):
             self.model.add(sum(self.find_release_time(train, op, res) for train, op, res in current_tuple) >= 1)
             return
 
         for train_1, op_1, res_1 in edges[depth]:
             if all(train_1 != train_2 for train_2, op_2, res_2 in current_tuple):
-                self.func_b(edges, current_tuple + [(train_1, op_1, res_1)], depth + 1)
+                self.find_cycle_tuple(edges, current_tuple + [(train_1, op_1, res_1)], depth + 1)
 
 
     def set_objective(self):
@@ -205,6 +210,7 @@ class DisplibSolver:
             self.save_res_graph_as_image()
 
         self.solver.parameters.log_search_progress = True
+        self.solver.parameters.max_time_in_seconds = 1200
 
         status = self.solver.Solve(self.model)
         if status == cp.OPTIMAL or status == cp.FEASIBLE:
@@ -213,10 +219,10 @@ class DisplibSolver:
             print(f"Optimal Solution found with objective value found of {round(self.solver.objective_value)}")
 
             events = self.topological_sorted_events(self.get_events())
-            return Solution(round(self.solver.objective_value), events)
+            return Solution(round(self.solver.objective_value), events), Log(status, round(self.solver.best_objective_bound))
         else:
             print(f"Model is infeasible!")
-            return Solution(-1, [])
+            return Solution(-1, []), Log(status, -1)
 
 
     def get_events(self):
@@ -439,7 +445,7 @@ class DisplibSolver:
 
 def main():
     try:
-        with open(f"Testing/Instances/{args.instance}", 'r') as file:
+        with open(f"Instances/{args.instance}", 'r') as file:
             instance = json.load(file)
     except FileNotFoundError:
         print(f"File {args.instance} was not found")
@@ -447,8 +453,8 @@ def main():
 
     instance = parse_instance(instance)
     solver = DisplibSolver(instance)
-    solution = solver.solve()
-    write_solution_to_file(solution)
+    solution, log = solver.solve()
+    write_solution_to_file(solution, log)
 
 
 def create_train_graph(train):
@@ -495,7 +501,7 @@ def create_deadlock_graph(trains, resources):
     return graph
 
 
-def func_a(edges):
+def pre_check_list(edges):
     '''
     FIND MORE CRITERIA!!!
     '''
@@ -508,9 +514,11 @@ def func_a(edges):
     return False
 
 
-def write_solution_to_file(solution : Solution):
+def write_solution_to_file(solution : Solution, log: Log):
     with open(f"Solutions/sol_{args.instance}", 'w') as file:
         file.write(json.dumps({"objective_value": solution.objective_value, "events": solution.events}))
+    with open(f"Logs/log_{args.instance}", 'w') as file:
+        file.write(json.dumps({"status_code": log.status_code, "best_bound": log.best_bound}))
 
 
 def parse_instance(instance):
@@ -541,8 +549,8 @@ def parse_instance(instance):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(prog="DISPLIB-Solver", description="By Lina Breuer, Sebastian Brunke, Elias Kaiser, Felix Michel")
-    parser.add_argument('instance', help="Filename of the instance that needs to be solved", type=str)
-    parser.add_argument("--debug", action="store_true", help="Activates debug-mode")
+    parser.add_argument('instance', help="Filename of the instance that needs to be solved. The solution of the instance will be saved in Solutions/ as sol_<instance>. The instance has to be located in Instances/", type=str)
+    parser.add_argument("--debug", action="store_true", help="Activates debug-mode. If set, a resource-allocation-graph and the operations_graph of each train (with chosen paths) will be created.")
     args = parser.parse_args()
 
     main()

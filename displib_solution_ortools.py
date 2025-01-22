@@ -211,6 +211,7 @@ class DisplibSolver:
 
         self.solver.parameters.log_search_progress = True
         self.solver.parameters.max_time_in_seconds = 1200
+        self.solver.parameters.symmetry_level = 3
 
         status = self.solver.Solve(self.model)
         if status == cp.OPTIMAL or status == cp.FEASIBLE:

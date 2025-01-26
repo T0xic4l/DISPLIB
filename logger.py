@@ -5,28 +5,33 @@ import os
 from tqdm import tqdm
 
 from data import Instance, Solution
+from event_sorter import EventSorter
 
 
 class Log:
-    def __init__(self, status_code, best_bound, solution : Solution):
-        self.solution = solution
-        self.status_code = status_code
-        self.best_bound = best_bound
+    def __init__(self, start_sol, start_obj_val):
+        self.start_sol = start_sol
+        self.start_obj_val = start_obj_val
 
-        self.resource_allocation_graph = []
-        self.train_graphs = []
+        self.improved_val_sol = []
+
+        self.final_sol = []
+        self.final_objective_value = -1
 
 
-    def write_solution_to_file(self, path, filename):
+    def update_solutions(self, feasible_sol, obj_val):
+        self.improved_val_sol.append((obj_val, feasible_sol))
+        self.final_sol = feasible_sol
+        self.final_objective_value = obj_val
+
+
+    def write_final_solution_to_file(self, path, filename):
+        event_sorter = EventSorter(self.final_sol)
         with open(os.path.join(path, filename), 'w') as file:
-            file.write(json.dumps({"objective_value": self.solution.objective_value, "events": self.solution.events}))
+            file.write(json.dumps({"objective_value": self.final_objective_value, "events": event_sorter.events}))
 
 
-    def write_log_to_file(self, path, filename):
-        with open(os.path.join(path, filename), 'w') as file:
-            file.write(json.dumps({"status_code": self.status_code, "best_bound": self.best_bound}))
-
-
+    '''
     def save_res_graph_as_image(self, path, filename):
         pos = nx.spring_layout(self.resource_allocation_graph, seed=42)
 
@@ -92,5 +97,6 @@ class Log:
 
             plt.savefig(os.path.join(path, f"{filename_prefix}_{i}"), format="png")
             plt.close()
-
+    
+    '''
 

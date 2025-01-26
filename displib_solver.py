@@ -44,13 +44,13 @@ class DisplibSolver:
                     select_vars[j, s] = self.model.NewBoolVar(name=f"Train {i} : Edge<{j},{s}>")
             self.edge_select_vars.append(select_vars)
 
-            for obj in self.objectives:
-                if obj["coeff"] != 0:
-                    self.threshold_vars[obj["train"], obj["operation"]] = self.model.NewIntVar(lb=0, ub=2 ** 20,
-                                                                                               name=f"Threshold of Train {obj["train"]} : Operation {obj["operation"]}")
-                else:
-                    self.threshold_vars[obj["train"], obj["operation"]] = self.model.NewBoolVar(
-                        name=f"Threshold of Train {obj["train"]} : Operation {obj["operation"]}")
+        for obj in self.objectives:
+            if obj["coeff"] != 0:
+                self.threshold_vars[obj["train"], obj["operation"]] = self.model.NewIntVar(lb=0, ub=2 ** 20,
+                                                                                           name=f"Threshold of Train {obj["train"]} : Operation {obj["operation"]}")
+            else:
+                self.threshold_vars[obj["train"], obj["operation"]] = self.model.NewBoolVar(
+                    name=f"Threshold of Train {obj["train"]} : Operation {obj["operation"]}")
 
         self.res_graph = self.create_deadlock_graph()
 
@@ -117,6 +117,10 @@ class DisplibSolver:
         for i, (res, ops) in enumerate(tqdm(self.trains_per_res.items(), desc="Adding resource-constraints")):
             # If there are multiple operations that use the same resource, a conflict could – in theory – be possible
             if len(ops) > 1:
+                '''
+                What we are doing now, is very inefficient!
+                New idea: Create exactly ONE interval-variable for a <op, res> tuple instead of creating one for every pair it is part of...
+                '''
                 for (train_1, op_1), (train_2, op_2) in itertools.combinations(ops, 2):
                     # Since operations per train do not overlap due to the timing constraints, we can skip this case
                     if train_1 == train_2:
@@ -197,6 +201,10 @@ class DisplibSolver:
         status = self.solver.Solve(self.model)
 
         if status == cp.OPTIMAL or status == cp.FEASIBLE:
+            '''
+            Due to the deadlock-constraints, we have to check, if any of the zero-release-times were
+            incremented and put that change INTO the original instance.
+            '''
             print(f"Optimal Solution found with objective value found of {round(self.solver.objective_value)}")
             events = self.topological_sort(self.get_events())
             return Log(status, round(self.solver.best_objective_bound),
@@ -302,9 +310,8 @@ class DisplibSolver:
 
         # Add priority-edges for same resources
         for i, event in enumerate(events):
-            duration = self.solver.value(
-                self.op_end_vars[(event["train"], event["operation"])]) - self.solver.value(
-                self.op_end_vars[(event["train"], event["operation"])])
+            duration = (self.solver.value(self.op_end_vars[(event["train"], event["operation"])])
+                        - self.solver.value(self.op_end_vars[(event["train"], event["operation"])]))
             critical_resources = []
 
             if duration > 0:

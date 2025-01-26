@@ -1,9 +1,9 @@
 import argparse, json
 import os
 
-from displib_solver import DisplibSolver
-import logger
 from data import Instance
+from heuristic import get_heuristic_solution
+from lns_coordinator import LnsCoordinator
 
 def parse_instance(instance):
     # Fill in the defined default values for easy access
@@ -32,22 +32,18 @@ def parse_instance(instance):
 
 def main():
     try:
-        with open(os.path.join("Testing/Instances", args.instance), 'r') as file:
+        with open(os.path.join("Instances", args.instance), 'r') as file:
             instance = json.load(file)
     except FileNotFoundError:
         print(f"File {args.instance} was not found")
         return
 
     instance = parse_instance(instance)
-    solver = DisplibSolver(instance)
+    heuristic_sol = get_heuristic_solution(instance)
 
-    log = solver.solve()
-    log.write_solution_to_file("Solutions", f"sol_{args.instance}")
-    log.write_log_to_file("Logs", f"log_{args.instance}")
-
-    if args.debug:
-        log.save_res_graph_as_image("Graphs", "Resource_Graph.png")
-        log.save_train_graphs_as_image()
+    lns_coordinator = LnsCoordinator(instance, heuristic_sol, 600)
+    log = lns_coordinator.log
+    log.write_final_solution_to_file("Solutions", f"sol_{args.instance}")
 
 
 if __name__ == "__main__":

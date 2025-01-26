@@ -1,10 +1,5 @@
-import matplotlib.pyplot as plt
-import networkx as nx
 import json
 import os
-from tqdm import tqdm
-
-from data import Instance, Solution
 from event_sorter import EventSorter
 
 

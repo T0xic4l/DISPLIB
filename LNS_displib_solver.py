@@ -211,7 +211,7 @@ class LnsDisplibSolver:
 
             if len(edge_boolvars):
                 self.model.add(sum(edge_boolvars) >= 1)
-
+            
             '''
             edges = []
             for edge in itertools.pairwise(cycle + [cycle[0]]):

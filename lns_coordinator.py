@@ -20,9 +20,7 @@ class LnsCoordinator:
         while self.calculate_remaining_time() > 30:
             choice = sorted(sample(range(len(feasible_sol)), 3))
 
-            copy_sol = copy.deepcopy(self.feasible_sol)
-
-            new_feasible_sol = LnsDisplibSolver(instance, copy_sol, choice, self.calculate_remaining_time() - 2).solve()
+            new_feasible_sol = LnsDisplibSolver(instance, self.feasible_sol, choice, self.calculate_remaining_time() - 2).solve()
             new_objective_value = calculate_objective_value(instance.objectives, new_feasible_sol)
 
             if new_objective_value < self.objective:

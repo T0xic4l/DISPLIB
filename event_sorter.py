@@ -26,9 +26,14 @@ class EventSorter:
                     subgraph = self.create_subgraph(topological_graph, component)
 
                     # Now, topologically sort it
-                    for node in list(nx.topological_sort(subgraph)):
-                        # reorder the group of events and add it to the sorted list
-                        sorted_events.append(self.events[lhs + node])
+                    try:
+                        for node in list(nx.topological_sort(subgraph)):
+                            # reorder the group of events and add it to the sorted list
+                            sorted_events.append(self.events[lhs + node])
+                    except nx.NetworkXUnfeasible:
+                        # If topological sorting fails, append the original event list instead
+                        print(f"Error sorting events {lhs} - {rhs}")
+                        sorted_events.extend(self.events[lhs:rhs])
             else:
                 sorted_events.append(self.events[lhs])
 

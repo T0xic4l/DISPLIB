@@ -117,7 +117,7 @@ class EventSorter:
         if op == 0:
             return None
 
-        operations = self.feasible_sol[train].keys()
+        operations = list(self.feasible_sol[train].keys())
         for i, to_find in enumerate(operations):
             if to_find == op:
                 return operations[i - 1]
@@ -128,7 +128,7 @@ class EventSorter:
         events = []
 
         for i, train in enumerate(feasible_sol):
-            for op, timings in train[i].items():
+            for op, timings in train.items():
                 events.append({"time": timings["start"], "train": i, "operation": op})
 
         return sorted(events, key=lambda x: x["time"])

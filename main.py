@@ -12,7 +12,7 @@ def parse_instance(instance):
             if "start_lb" not in operation:
                 operation["start_lb"] = 0
             if "start_ub" not in operation:
-                operation["start_ub"] = 2**20
+                operation["start_ub"] = 2 ** 40
             if "resources" not in operation:
                 operation["resources"] = []
             else:

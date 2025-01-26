@@ -8,29 +8,28 @@ import copy
 
 class LnsCoordinator:
     def __init__(self, instance, feasible_sol, time_limit):
-        self.feasible_sol = feasible_sol
+        self.feasible_sol = copy.deepcopy(feasible_sol)
         self.objective = calculate_objective_value(instance.objectives, self.feasible_sol)
+
         self.start_time = time()
         self.has_to_be_finished_at = self.start_time + time_limit
 
-        self.log = Log(copy.deepcopy(self.feasible_sol), self.objective)
+        self.log = Log(self.feasible_sol, self.objective)
 
         # do 30 seconds for now since we do not know how long a single iteration of the lns will take
         while self.calculate_remaining_time() > 30:
-            choice = sorted(sample(range(len(feasible_sol)), 2))
+            choice = sorted(sample(range(len(feasible_sol)), 3))
 
             copy_sol = copy.deepcopy(self.feasible_sol)
-            copy_instance = copy.deepcopy(instance)
 
-            new_feasible_sol = LnsDisplibSolver(copy_instance, copy_sol, choice, self.calculate_remaining_time() - 2).solve()
-            if new_feasible_sol:
-                new_objective_value = calculate_objective_value(instance.objectives, new_feasible_sol)
+            new_feasible_sol = LnsDisplibSolver(instance, copy_sol, choice, self.calculate_remaining_time() - 2).solve()
+            new_objective_value = calculate_objective_value(instance.objectives, new_feasible_sol)
 
-                if new_objective_value < self.objective:
-                    print("improved objective value")
-                    self.objective = new_objective_value
-                    self.feasible_sol = new_feasible_sol
-                    self.log.update_solutions(self.feasible_sol, self.objective)
+            if new_objective_value < self.objective:
+                print(new_objective_value)
+                self.objective = new_objective_value
+                self.feasible_sol = new_feasible_sol
+                self.log.update_solutions(self.feasible_sol, self.objective)
 
 
     def calculate_remaining_time(self):

@@ -11,13 +11,15 @@ class LnsDisplibSolver:
     def __init__(self, instance : Instance, feasible_solution : list, choice : list, time_limit):
         self.time_limit = time_limit
         self.current_time = time()
+
         self.old_solution = copy.deepcopy(feasible_solution)
         self.feasible_sol = feasible_solution
         self.choice = choice
 
-        self.trains = instance.trains
-        self.objectives = instance.objectives
-        self.train_graphs = instance.trains_graphs
+        self.instance = copy.deepcopy(instance)
+        self.trains = self.instance.trains
+        self.objectives = self.instance.objectives
+        self.train_graphs = self.instance.trains_graphs
 
         self.model = cp.CpModel()
         self.solver = cp.CpSolver()
@@ -35,12 +37,10 @@ class LnsDisplibSolver:
                 for j, op in enumerate(self.trains[i]):
                     self.op_start_vars[i, j] = self.model.NewIntVar(lb=op["start_lb"], ub=op["start_ub"],
                                                                     name=f"Start of Train {i} : Operation {j}")
-                    self.op_end_vars[i, j] = self.model.NewIntVar(lb=op["start_lb"] + op["min_duration"], ub=2 ** 20,
+                    self.op_end_vars[i, j] = self.model.NewIntVar(lb=op["start_lb"] + op["min_duration"], ub=2 ** 40,
                                                                   name=f"End of Train {i} : Operation {j}")
 
                     for res in op["resources"]:
-                        if type(res["release_time"]) != int:
-                            a = 4
                         if res["release_time"] == 0:
                             res["release_time"] = self.model.NewBoolVar(name=f"rt for {(i, j)} : res {res}")
 
@@ -63,8 +63,7 @@ class LnsDisplibSolver:
         for obj in self.objectives:
             if obj["train"] in self.choice:
                 if obj["coeff"] != 0:
-                    self.threshold_vars[obj["train"], obj["operation"]] = self.model.NewIntVar(lb=0, ub=2 ** 20,
-                                                                                           name=f"Threshold of Train {obj["train"]} : Operation {obj["operation"]}")
+                    self.threshold_vars[obj["train"], obj["operation"]] = self.model.NewIntVar(lb=0, ub=2 ** 40, name=f"Threshold of Train {obj["train"]} : Operation {obj["operation"]}")
                 else:
                     self.threshold_vars[obj["train"], obj["operation"]] = self.model.NewBoolVar(
                         name=f"Threshold of Train {obj["train"]} : Operation {obj["operation"]}")
@@ -86,6 +85,7 @@ class LnsDisplibSolver:
     def solve(self):
         # self.solver.parameters.log_search_progress = True
         self.solver.parameters.max_time_in_seconds = self.time_limit - time() + self.current_time
+
         status = self.solver.Solve(self.model)
 
         if status == cp.OPTIMAL or status == cp.FEASIBLE:
@@ -99,8 +99,8 @@ class LnsDisplibSolver:
             print("New solution found")
             return self.feasible_sol
         else:
-            print("Model is infeasible")
-            return None
+            print("Model is infeasible. Give back the old solution")
+            return self.old_solution
 
 
     def add_threshold_constraints(self):
@@ -148,11 +148,17 @@ class LnsDisplibSolver:
 
                 for train, op in ops:
                     if train in self.choice:
-                        rt = self.find_release_time(train, op, res)
-
                         op_chosen = self.model.NewBoolVar(name=f"Train {train} : Operation {op} is chosen")
-                        size = self.model.NewIntVar(lb=0, ub=2 ** 20, name=f"Placeholder var")
-                        end = self.model.NewIntVar(lb=0, ub= 2 ** 20, name=f"Placeholder var")
+                        if op == 0 or op == len(self.train_graphs[train].nodes) - 1:
+                            self.model.add(op_chosen == 1)
+                        else:
+                            for i, f_train in enumerate(self.choice):
+                                if train == f_train:
+                                    self.model.add(sum(self.edge_select_vars[i][in_edge] for in_edge in self.train_graphs[train].in_edges(op)) == op_chosen)
+
+                        rt = self.find_release_time(train, op, res)
+                        size = self.model.NewIntVar(lb=0, ub=2 ** 40, name=f"Placeholder var")
+                        end = self.model.NewIntVar(lb=0, ub=2 ** 40, name=f"Placeholder var")
                         self.model.add(end == self.op_end_vars[train, op] + rt)
 
                         interval_vars[train, op] = self.model.NewOptionalIntervalVar(start=self.op_start_vars[train, op],
@@ -168,7 +174,7 @@ class LnsDisplibSolver:
 
                         interval_vars[train, op] = self.model.NewIntervalVar(start=self.feasible_sol[train][op]["start"],
                                                                                 end=self.feasible_sol[train][op]["end"] + rt,
-                                                                                size=self.feasible_sol[train][op]["end"] - self.feasible_sol[train][op]["start"],
+                                                                                size=self.feasible_sol[train][op]["end"] + rt - self.feasible_sol[train][op]["start"],
                                                                                 name=f"Fix interval for Train {train} : Operation {op}")
 
 
@@ -301,10 +307,6 @@ class LnsDisplibSolver:
             else:
                 for op, value in self.feasible_sol[i].items():
                     for res in value["resources"]:
-
-                        if type(res["release_time"]) != int:
-                            a = 4
-
                         if res["release_time"] != 0:
                             continue
 

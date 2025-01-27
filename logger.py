@@ -10,8 +10,8 @@ class Log:
 
         self.improved_val_sol = []
 
-        self.final_sol = []
-        self.final_objective_value = -1
+        self.final_sol = start_sol
+        self.final_objective_value = start_obj_val
 
 
     def update_solutions(self, feasible_sol, obj_val):

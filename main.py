@@ -1,9 +1,10 @@
-import argparse, json
-import os
+import argparse, json, os, copy
 
+import lns_coordinator
 from data import Instance
 from heuristic import get_heuristic_solution
 from lns_coordinator import LnsCoordinator
+from logger import Log
 
 def parse_instance(instance):
     # Fill in the defined default values for easy access
@@ -39,10 +40,11 @@ def main():
         return
 
     instance = parse_instance(instance)
-    heuristic_sol = get_heuristic_solution(instance)
+    heuristic_sol = get_heuristic_solution(copy.deepcopy(instance))
 
-    lns_coordinator = LnsCoordinator(instance, heuristic_sol, 600)
-    log = lns_coordinator.log
+    # lns_coordinator = LnsCoordinator(instance, heuristic_sol, 600)
+    # log = lns_coordinator.log
+    log = Log(heuristic_sol, lns_coordinator.calculate_objective_value(instance.objectives, heuristic_sol))
     log.write_final_solution_to_file("Solutions", f"sol_{args.instance}")
 
 

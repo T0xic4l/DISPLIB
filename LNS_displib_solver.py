@@ -184,47 +184,30 @@ class LnsDisplibSolver:
 
 
     def add_deadlock_constrains(self):
-        cycles = list(nx.simple_cycles(self.res_graph))
-        for cycle in cycles:
-            # Alle möglichen Kreies einzelnd durchgehen ist exponentieller Aufwand, den wir uns hier nicht leisten können. Stattdessen suchen wir einen Kreis im Deadlock-Graph und
-            # extrahieren pro Kante nur diejenigen (also die variablen) Züge, die diesen Deadlock mit einer erhöhten Release-Time auflösen könnten.
-            # Dann fordern wir, dass entlang mindestens einer Kante alle variablen Züge ihre Release-Time inkrementiert bekommen haben. In jedem Falle würde somit jeder potentiell mögliche Deadlock
-            # gelöst werden
-
-            var_train_edges = []
+        for cycle in list(nx.simple_cycles(self.res_graph)):
+            all_train_edges = []  # Includes lists, one per edge
+            var_train_edges = []  # Includes all (train, op, res) with train is in choice
             for edge in itertools.pairwise(cycle + [cycle[0]]):
-                edge_list = []
+                all_edges = []
                 edge_data = self.res_graph[edge[0]][edge[1]].get("data", [])
 
                 for train, op in edge_data:
+                    all_edges.append((train, op, edge[0]))
                     if train in self.choice:
-                        edge_list.append((train, op, edge[0]))
+                        var_train_edges.append((train, op, edge[0]))
+                all_train_edges.append(all_edges)
 
-                var_train_edges.append(edge_list)
+            sum_vars = []
+            for edges in all_train_edges:
+                sum_var = self.model.NewBoolVar(name="")
+                sum_vars.append(sum_var)
+                release_times = [self.find_release_time(train, op, res) for train, op, res in edges]
+                self.model.add(sum(release_times) == len(release_times)).OnlyEnforceIf(sum_var)
 
-            edge_boolvars = []
-            for e, edge in enumerate(var_train_edges):
-                if len(edge):
-                    edge_boolvar = self.model.NewBoolVar(name=f"Generic cycle resolve var")
-                    edge_boolvars.append(edge_boolvar)
-                    self.model.add(sum(self.find_release_time(train, op, res) for train, op, res in edge) == len(edge)).OnlyEnforceIf(edge_boolvar)
-
-            if len(edge_boolvars):
-                self.model.add(sum(edge_boolvars) >= 1)
-            
-            '''
-            edges = []
-            for edge in itertools.pairwise(cycle + [cycle[0]]):
-                edge_data = self.res_graph[edge[0]][edge[1]].get("data", [])
-                edges.append([(u, v, edge[0]) for u, v in edge_data])
-
-            edges.sort(key=lambda l: len(set([train for train, op, res in l])))
-
-            if pre_check_list(edges):
-                continue
-
-            self.find_cycle_tuple(edges, [], 0)
-            '''
+            all_rts_are_one = self.model.NewBoolVar(name="")
+            sum_vars.append(all_rts_are_one)
+            self.model.add(sum(self.find_release_time(train, op, res) for train, op, res in var_train_edges) == len(var_train_edges)).OnlyEnforceIf(all_rts_are_one)
+            self.model.add(sum(sum_vars) >= 1)
 
 
     def find_cycle_tuple(self, edges, current_tuple, depth):
@@ -275,9 +258,14 @@ class LnsDisplibSolver:
 
 
     def find_release_time(self, train, operation, resource):
-        for op_res in self.trains[train][operation]["resources"]:
-            if op_res["resource"] == resource:
-                return op_res["release_time"]
+        if train in self.choice:
+            for op_res in self.trains[train][operation]["resources"]:
+                if op_res["resource"] == resource:
+                    return op_res["release_time"]
+        else:
+            for res in self.feasible_sol[train][operation]["resources"]:
+                if res["resource"] == resource:
+                    return res["release_time"]
         return 0
 
 

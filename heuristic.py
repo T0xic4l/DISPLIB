@@ -2,227 +2,140 @@
 # warning: There are some assumptions about the given instance
 # 1. There is no release_time for any resource and for any operation
 # 2. There is no start_ub for any operation except the first of each train
-import networkx as nx
-import itertools
-from tqdm import tqdm
-from ortools.sat.python import cp_model as cp
-
-from data import Solution
-from logger import Log
 
 
-class FirstSolver:
-    def find_release_time(self, train, operation, resource):
-        for op_res in self.trains[train][operation]["resources"]:
-            if op_res["resource"] == resource:
-                return op_res["release_time"]
-        return 0
-
-    def choose_train_path(self):
-        sparse_trains = []
-        for i, train in enumerate(self.trains):
-            sparse_train = []
-            op = 0
-            operation = train[op]
-            for res, used in enumerate(operation["resources"]):
-                rel_time = used["release_time"]
-                #rel_time = self.find_release_time(i, op, res)
-                if rel_time == 0:
-                    next_op = train[op]["successors"][0]
-                    operation2 = train[next_op]
-                    for res2, used2 in enumerate(operation2["resources"]):
-                        if used2 == used:
-                            continue
-                    self.trains[i][op]["resources"][res]["release_time"] = 1
-            self.trains[i][op]["operation"] = op
-            sparse_train.append(self.trains[i][op])
-
-            while op != len(train) - 1:
-                op = train[op]["successors"][0]
-                operation = train[op]
-                for res, used_reso in enumerate(operation["resources"]):
-                    rel_time = used_reso["release_time"]
-                    if rel_time == 0:
-                        next_op = train[op]["successors"][0]
-                        operation2 = train[next_op]
-                        for res2 in operation2["resources"]:
-                            if res2 == res:
-                                continue
-                        self.trains[i][op]["resources"][res]["release_time"] = 1
-                self.trains[i][op]["operation"] = op
-                sparse_train.append(self.trains[i][op])
-            sparse_trains.append(sparse_train)
-            #self.trains[i] = sparse_train
-        return sparse_trains
+import copy
 
 
-    def __init__(self, instance):
-        self.trains = instance.trains
-        self.trains = self.choose_train_path()
-        self.model = cp.CpModel()
-        self.solver = cp.CpSolver()
-        print(self.trains)
-        self.trains_per_res = dict()  # A mapping from a resource to a list of operations using this operation
-        self.op_start_vars = dict()
-        self.op_end_vars = dict()
+def get_heuristic_solution(instance):
+    # Increase all zero release_times by one
+    for train in instance.trains:
+        for i, op in enumerate(train):
+            for res in op["resources"]:
+                if res["release_time"] == 0 and not succ_uses_res(train, i, res["resource"]):
+                    res["release_time"] = 1
 
-        for i, train in enumerate(self.trains):
-            for j, op in enumerate(train):
-                self.op_start_vars[i, j] = self.model.NewIntVar(lb=op["start_lb"], ub=op["start_ub"],
-                                                                name=f"Start of Train {i} : Operation {j}")
-                self.op_end_vars[i, j] = self.model.NewIntVar(lb=op["start_lb"] + op["min_duration"], ub=2 ** 20,
-                                                              name=f"End of Train {i} : Operation {j}")
+    feasible_sol = []
 
-                # Create a mapping that maps a ressource to the list of operations using that ressource
-                for res in op["resources"]:
-                    #if res["release_time"] == 0:
-                    #    res["release_time"] = self.model.NewBoolVar(name=f"rt for {(i, j)} : res {res}")
+    # Choose a path for each train. All paths will most likely violate several resource constraints
+    for i, train in enumerate(instance.trains):
+        train_solution = {}
+        op = 0
+        start_op = 0
+        while op != len(train) - 1:
+            succ = choose_successor(train, op)
+            end_op = max(train[succ]["start_lb"], start_op + train[op]["min_duration"])
 
-                    if res["resource"] in self.trains_per_res.keys():
-                        self.trains_per_res[res["resource"]].append((i, j))
-                    else:
-                        self.trains_per_res[res["resource"]] = [(i, j)]
+            train_solution.update({op: {"start": start_op, "end": end_op, "resources": instance.trains[i][op]["resources"]}})
 
-        #self.add_path_constraints()
-        self.add_timing_constraints()
-        self.add_resource_constraints()
+            op = succ
+            start_op = end_op
 
-    def add_timing_constraints(self):
-        # Guarantee that every operation cannot start before the chosen predecessor (start + min_duration as a lower bound)
-        for i, train in tqdm(enumerate(self.trains), desc="Adding timing-constraints"):
-            self.model.add(self.op_start_vars[i, 0] == 0)
-            for j, op in enumerate(train):
+        train_solution.update({op: {"start": start_op, "end": start_op + train[op]["min_duration"], "resources": instance.trains[i][op]["resources"]}})
 
-                    # If operation is chosen, successor may only start after at least start_var + min_duration
-                self.model.add(self.op_start_vars[i, j] + self.trains[i][j]["min_duration"] <=
-                               self.op_end_vars[i, j])
-                    # Operation ends when successor operation starts
-                if j == len(train)-1:
-                    continue
-                self.model.add(self.op_end_vars[i, j] == self.op_start_vars[i, j+1])
+        feasible_sol.append(train_solution)
 
-    def add_resource_constraints(self):
-        for i, (res, ops) in enumerate(tqdm(self.trains_per_res.items(), desc="Adding resource-constraints")):
-            # If there are multiple operations that use the same resource, a conflict could – in theory – be possible
-            if len(ops) > 1:
-                for (train_1, op_1), (train_2, op_2) in itertools.combinations(ops, 2):
-                    # Since operations per train do not overlap due to the timing constraints, we can skip this case
-                    if train_1 == train_2:
-                        continue
+    end_of_last_op = get_end_of_last_op(feasible_sol)
+    current_time = 0
+    blocked_resources = [] # track resources that are blocked at current time or longer; (r1, freed_time = end+release_time)
+    train_schedule = [list(train.keys()) for train in feasible_sol]
+    while current_time <= end_of_last_op:
+        # update resource_tracker because resources might be freed now
+        update_resource_tracker(blocked_resources, current_time)
 
-                    # get the release time of the resource for both operations
-                    rt_1 = self.find_release_time(train_1, op_1, res)
-                    rt_2 = self.find_release_time(train_2, op_2, res)
+        for i, train in enumerate(feasible_sol):
 
-                    end_1 = self.model.NewIntVar(lb=0, ub=2 ** 20, name="Placeholder var")
-                    end_2 = self.model.NewIntVar(lb=0, ub=2 ** 20, name="Placeholder var")
+            if not len(train_schedule[i]):
+                continue # This train is done
 
-                    self.model.add(end_1 == self.op_end_vars[train_1, op_1] + rt_1)
-                    self.model.add(end_2 == self.op_end_vars[train_2, op_2] + rt_2)
+            current_operation = train_schedule[i].pop(0)
+            print(current_operation)
 
-                    size_1 = self.model.new_int_var(lb=0, ub=2 ** 20, name="Placeholder var")
-                    size_2 = self.model.new_int_var(lb=0, ub=2 ** 20, name="Placeholder var")
+            if current_time == train[current_operation]["start"]:
+                # train wants to start operation, but might be shiftet due to resource conflict
+                print("operation startet")
+                needed_resources = [res["resource"] for res in train[current_operation]["resources"]]
 
-                    interval_1 = self.model.NewIntervalVar(start=self.op_start_vars[train_1, op_1],
-                                                                   end=end_1,
-                                                                   size=size_1,
-                                                                   name=f"Interval for Train {train_1} : Operation {op_1}")
+                if set(needed_resources).isdisjoint(set([res[0] for res in blocked_resources])):
+                    # Train gets the resource
+                    for res in train[current_operation]["resources"]:
+                        blocked_resources.append((res["resource"], train[current_operation]["end"] + res["release_time"]))
+                else:
+                    # Conflict, train needs to be shiftet
+                    min_shift = 0
+                    for res in needed_resources:
+                        for blocked_res, free_time in blocked_resources:
+                            if res == blocked_res:
+                                if free_time > min_shift:
+                                    min_shift = free_time
 
-                    interval_2 = self.model.NewIntervalVar(start=self.op_start_vars[train_2, op_2],
-                                                                   end=end_2,
-                                                                   size=size_2,
-                                                                   name=f"Interval for Train {train_2} : Operation {op_2}")
+                    shift_operations(train, min_shift)
 
-                    self.model.add_no_overlap([interval_1, interval_2])
+        current_time += 1
+        end_of_last_op = get_end_of_last_op(feasible_sol) # This might change due to shift all operations because of resource conflict
+        # print(end_of_last_op - current_time)
 
-    def solve(self):
-        self.solver.parameters.log_search_progress = True
-        self.solver.parameters.max_time_in_seconds = 1200
-        #self.solver.parameters.symmetry_level = 3
+    return feasible_sol
 
-        status = self.solver.Solve(self.model)
+def choose_successor(train, op):
+    find_succ = train[op]["successors"][0]  # initial its the first successor, but there might be a better one
+    end_succ = train[find_succ]["start_lb"] + train[find_succ]["min_duration"]
 
-        if status in (cp.FEASIBLE, cp.OPTIMAL):
-            print(f"Initial solution found")
-            solution = []
-            verify = []
-            for i, train in enumerate(self.trains):
-                train_solution = {}
-                verify_train = []
-                for j, op in enumerate(train):
-                    oper = op["operation"]
-                    train_solution.update({oper: {"start": self.solver.value(self.op_start_vars[i,j]),
-                                                  "end": self.solver.value(self.op_end_vars[i,j])}})
-                    verify_train.append({"time": self.solver.value(self.op_start_vars[i,j]),
-                                         "train": i,
-                                         "operation": oper})
-                solution.append(train_solution)
-                verify.extend(verify_train)
-            verify = sorted(verify, key=lambda x: x["time"])
-            return solution, verify
-        else:
-            print(f"Model is infeasible!")
-            return Log(status, -1, Solution(-1, []))
+    if len(train[op]["successors"]) > 1:
+        for succ in train[op]["successors"]:
+            if train[succ]["start_lb"] + train[succ]["min_duration"] < end_succ:
+                find_succ = succ
+                end_succ = train[succ]["start_lb"] + train[succ]["min_duration"]
 
-class Heuristic:
-    def __init__(self,instance):
-        self.current_time = 0
-        self.instance = instance
-        self.trains = instance.trains
+    return find_succ
 
-    def get_heuristic_solution(self):
-        solution = []
-        verify = []
-        for i, train in enumerate(self.trains):
-            train_solution = {}
-            verify_train = []
-            op = 0
-            end = max(train[0]["min_duration"], self.current_time)
-            train_solution.update({0: {"start": 0, "end": end}})
-            verify_train.append({"operation": 0,
-                                 "time": 0,
-                                 "train": i})
 
-            self.current_time = train_solution[0]["end"]
+def update_resource_tracker(resources, time):
+    resources_iteration = copy.deepcopy(resources)
+    for res, free_at in resources_iteration:
+        if time == free_at:
+            resources.remove((res, free_at))
 
-            while op != len(train) - 1:
-                op = train[op]["successors"][0]
-                self.current_time = max(self.current_time, train[op]["start_lb"])
-                end_time = self.current_time + train[op]["min_duration"]
-                train_solution.update({op: {"start": self.current_time, "end": end_time}})
 
-                verify_train.append({"operation": op,
-                                     "time": self.current_time,
-                                     "train": i})
+def shift_operations(train, shift):
+    for op, timings in train.items():
+        timings["start"] += shift
+        timings["end"] += shift
 
-                self.current_time = train_solution[op]["end"]
 
-                verify.extend(verify_train)
-            solution.append(train_solution)
-        verify = sorted(verify, key=lambda x: x["time"])
-        if self.conflict_search(verify):
-            return False, False
-        return solution, verify
+def get_end_of_last_op(feasible_sol):
+    find_end = 0
+    for train in feasible_sol:
+        for op, timings in train.items():
+            if timings["end"] > find_end:
+                find_end = timings["end"]
+    return find_end
 
 
 
-    def conflict_search(self, events):
-        current_res = {}
-        train_res = {}
-        for i, train in enumerate(self.trains):
-            train_res[i] = None
-        for event in events:
-            train = event["train"]
-            op = event["operation"]
-            for res in self.trains[train][op]["resources"]:
-                #resource is already in use
-                if res["resource"] in current_res:
-                    return True
-                #resource is free:
-                current_res[res["resource"]] = train
-                old = train_res[train]
-                if old:
-                    current_res.pop(old)
-                train_res[train] = res["resource"]
-        return False
+def succ_uses_res(train, op, resource):
+    for succ in train[op]["successors"]:
+        if resource in [res["resource"] for res in train[succ]["resources"]]:
+            return True
+    return False
 
+
+'''
+def get_heuristic_solution(instance):
+    solution = []
+    current_time = 0
+
+    for i, train in enumerate(instance.trains):
+        train_solution = {}
+
+        op = 0
+        train_solution.update({0: {"start": 0, "end": max(train[0]["min_duration"], current_time), "resources": instance.trains[i][op]["resources"]}})
+        current_time = train_solution[0]["end"]
+
+        while op != len(train) - 1:
+            op = train[op]["successors"][0]
+            current_time = max(current_time, train[op]["start_lb"])
+            train_solution.update({op: {"start": current_time, "end": current_time + train[op]["min_duration"], "resources": instance.trains[i][op]["resources"]}})
+            current_time = train_solution[op]["end"]
+    return solution
+'''

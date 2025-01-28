@@ -1,5 +1,4 @@
 from LNS_displib_solver import LnsDisplibSolver
-from event_sorter import EventSorter
 from time import time
 from random import sample
 from logger import Log
@@ -16,18 +15,29 @@ class LnsCoordinator:
 
         self.log = Log(self.feasible_sol, self.objective)
 
+        sample_size = 1 # Experimental
+        no_improvement_count = 0 # Experimental
         # do 30 seconds for now since we do not know how long a single iteration of the lns will take
-        while self.calculate_remaining_time() > 30:
-            choice = sorted(sample(range(len(feasible_sol)), 3))
+        while self.calculate_remaining_time() > 10:
+            if no_improvement_count >= 40: # Experimental
+                sample_size += 1
+                no_improvement_count = 0
+                print(f"Increasing Sample Size to {sample_size}")
+
+            choice = sorted(sample(range(len(feasible_sol)), sample_size))
 
             new_feasible_sol = LnsDisplibSolver(instance, self.feasible_sol, choice, self.calculate_remaining_time() - 2).solve()
             new_objective_value = calculate_objective_value(instance.objectives, new_feasible_sol)
 
             if new_objective_value < self.objective:
+                no_improvement_count = 0 # Experimental
                 print(new_objective_value)
                 self.objective = new_objective_value
                 self.feasible_sol = new_feasible_sol
                 self.log.update_solutions(self.feasible_sol, self.objective)
+            else:
+                no_improvement_count += 1 # Experimental
+
 
 
     def calculate_remaining_time(self):

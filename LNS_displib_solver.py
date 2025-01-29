@@ -19,12 +19,12 @@ class LnsDisplibSolver:
         self.instance = copy.deepcopy(instance)
         self.trains = self.instance.trains
         self.objectives = self.instance.objectives
-        self.train_graphs = self.instance.trains_graphs
+        self.train_graphs = self.instance.get_train_graphs()
 
         self.model = cp.CpModel()
         self.solver = cp.CpSolver()
 
-        self.trains_per_res = dict()  # A mapping from a resource to a list of operations using this operation
+        self.resource_conflicts = dict()  # A mapping from a resource to a list of operations using this operation
         self.op_start_vars = dict()
         self.op_end_vars = dict()
         self.edge_select_vars = list()
@@ -44,10 +44,10 @@ class LnsDisplibSolver:
                         if res["release_time"] == 0:
                             res["release_time"] = self.model.NewBoolVar(name=f"rt for {(i, j)} : res {res}")
 
-                        if res["resource"] in self.trains_per_res.keys():
-                            self.trains_per_res[res["resource"]].append((i, j))
+                        if res["resource"] in self.resource_conflicts.keys():
+                            self.resource_conflicts[res["resource"]].append((i, j))
                         else:
-                            self.trains_per_res[res["resource"]] = [(i, j)]
+                            self.resource_conflicts[res["resource"]] = [(i, j)]
 
                     for s in op["successors"]:
                         select_vars[j, s] = self.model.NewBoolVar(name=f"Train {i} : Edge<{j},{s}>")
@@ -55,10 +55,10 @@ class LnsDisplibSolver:
             else:
                 for op in self.feasible_sol[i].keys():
                     for res in self.trains[i][op]["resources"]:
-                        if res["resource"] in self.trains_per_res.keys():
-                            self.trains_per_res[res["resource"]].append((i, op))
+                        if res["resource"] in self.resource_conflicts.keys():
+                            self.resource_conflicts[res["resource"]].append((i, op))
                         else:
-                            self.trains_per_res[res["resource"]] = [(i, op)]
+                            self.resource_conflicts[res["resource"]] = [(i, op)]
 
         for obj in self.objectives:
             if obj["train"] in self.choice:
@@ -68,7 +68,7 @@ class LnsDisplibSolver:
                     self.threshold_vars[obj["train"], obj["operation"]] = self.model.NewBoolVar(
                         name=f"Threshold of Train {obj["train"]} : Operation {obj["operation"]}")
 
-        self.res_graph = self.create_deadlock_graph()
+        self.deadlock_graph = self.create_deadlock_graph()
 
         self.add_threshold_constraints()
         self.add_path_constraints()
@@ -83,7 +83,6 @@ class LnsDisplibSolver:
 
 
     def solve(self):
-        # self.solver.parameters.log_search_progress = True
         self.solver.parameters.max_time_in_seconds = min(30, self.time_limit - time() + self.current_time) # This is just experimental to prevent time loss for expensive cycles
 
         status = self.solver.Solve(self.model)
@@ -96,10 +95,9 @@ class LnsDisplibSolver:
             IF another train solves the deadlock by increasing the release time, OR the cycle is not active because a the release time of a fixed train is 1. This is exactly what we want. 
             '''
             self.update_feasible_solution()
-            print("New solution found")
             return self.feasible_sol
         else:
-            print("Model is infeasible. Give back the old solution")
+            print("Model is infeasible.")
             return self.old_solution
 
 
@@ -142,7 +140,7 @@ class LnsDisplibSolver:
 
 
     def add_resource_constrains(self):
-        for res, ops in self.trains_per_res.items():
+        for res, ops in self.resource_conflicts.items():
             if len(ops) > 1:
                 interval_vars = {}
 
@@ -184,12 +182,12 @@ class LnsDisplibSolver:
 
 
     def add_deadlock_constrains(self):
-        for cycle in list(nx.simple_cycles(self.res_graph)):
+        for cycle in list(nx.simple_cycles(self.deadlock_graph)):
             all_train_edges = []  # Includes lists, one per edge
             var_train_edges = []  # Includes all (train, op, res) with train is in choice
             for edge in itertools.pairwise(cycle + [cycle[0]]):
                 all_edges = []
-                edge_data = self.res_graph[edge[0]][edge[1]].get("data", [])
+                edge_data = self.deadlock_graph[edge[0]][edge[1]].get("data", [])
 
                 for train, op in edge_data:
                     all_edges.append((train, op, edge[0]))
@@ -312,13 +310,3 @@ class LnsDisplibSolver:
                                     graph.add_nodes_from([res["resource"], succ_res["resource"]])
                                     graph.add_edge(edge[0], edge[1], data=[(i, op)])
         return graph
-
-
-def pre_check_list(edges):
-    unique_ids = set()
-    for i, edge in enumerate(edges, 1):
-        for train, op, res in edge:
-            unique_ids.add(train)
-        if len(unique_ids) < i:
-            return True
-    return False

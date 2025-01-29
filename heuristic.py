@@ -15,12 +15,14 @@ class FullInstanceHeuristic:
     def full_instance_heuristic(self):
         solution = []
         current_time = 0
+        max_pred_rt = 0
 
         for i, train in enumerate(self.instance.trains):
+
             train_solution = {}
 
             op = 0
-            train_solution.update({0: {"start": 0, "end": max(train[0]["min_duration"], current_time), "resources": self.instance.trains[i][op]["resources"]}})
+            train_solution.update({0: {"start": 0, "end": max(train[0]["min_duration"], current_time + max_pred_rt), "resources": self.instance.trains[i][op]["resources"]}})
             current_time = train_solution[0]["end"]
 
             while op != len(train) - 1:
@@ -31,11 +33,14 @@ class FullInstanceHeuristic:
 
             solution.append(train_solution)
 
+            max_pred_rt = max(res["release_time"] for op in train for res in op["resources"])
+
         return solution
 
 
 class HeuristicalSolver:
-    def __init__(self, instance):
+    def __init__(self, instance, time_limit):
+        self.time_limit = time_limit
         self.instance = copy.deepcopy(instance)
         self.trains = instance.trains
         self.trains = self.choose_train_path()
@@ -71,6 +76,7 @@ class HeuristicalSolver:
         self.add_timing_constraints()
         self.add_resource_constraints()
         self.set_objective()
+
 
     def find_release_time(self, train, operation, resource):
         for op_res in self.trains[train][operation]["resources"]:
@@ -148,12 +154,12 @@ class HeuristicalSolver:
             self.model.add(self.op_start_vars[i, 0] == 0)
 
             for j, op in enumerate(train):
-                self.model.add(self.op_start_vars[i, j] + self.trains[i][j]["min_duration"] <= self.op_end_vars[i, j])
+                if j != len(train) - 1:
+                    self.model.add(self.op_end_vars[i, j] == self.op_start_vars[i, j + 1])
+                    self.model.add(self.op_start_vars[i, j] + self.trains[i][j]["min_duration"] <= self.op_end_vars[i, j])
+                else:
+                    self.model.add(self.op_start_vars[i, j] + self.trains[i][j]["min_duration"] == self.op_end_vars[i, j])
 
-                if j == len(train) - 1:
-                    continue
-
-                self.model.add(self.op_end_vars[i, j] == self.op_start_vars[i, j + 1])
 
 
     def add_resource_constraints(self):
@@ -181,7 +187,7 @@ class HeuristicalSolver:
     def solve(self):
         self.solver.parameters.log_search_progress = True
         self.solver.parameters.symmetry_level = 3
-        self.solver.parameters.max_time_in_seconds = 60
+        self.solver.parameters.max_time_in_seconds = self.time_limit
 
         status = self.solver.Solve(self.model)
 

@@ -15,33 +15,35 @@ class LnsCoordinator:
 
         self.log = Log(self.feasible_sol, self.objective)
 
-        sample_size = 1 # Experimental
-        no_improvement_count = 0 # Experimental
-        # do 30 seconds for now since we do not know how long a single iteration of the lns will take
-        while self.calculate_remaining_time() > 10:
-            if no_improvement_count >= 40: # Experimental
-                sample_size += 1
-                no_improvement_count = 0
-                print(f"Increasing Sample Size to {sample_size}")
-
-            choice = sorted(sample(range(len(feasible_sol)), sample_size))
+        # actually, 5 seconds might be enough
+        while self.calculate_remaining_time() > 5:
+            choice = self.choose_trains()
 
             new_feasible_sol = LnsDisplibSolver(instance, self.feasible_sol, choice, self.calculate_remaining_time() - 2).solve()
             new_objective_value = calculate_objective_value(instance.objectives, new_feasible_sol)
 
             if new_objective_value < self.objective:
-                no_improvement_count = 0 # Experimental
-                print(new_objective_value)
+                print(f"Found a better solution with objective {new_objective_value} by rescheduling {choice}")
                 self.objective = new_objective_value
                 self.feasible_sol = new_feasible_sol
                 self.log.update_solutions(self.feasible_sol, self.objective)
-            else:
-                no_improvement_count += 1 # Experimental
-
 
 
     def calculate_remaining_time(self):
         return max(0, self.has_to_be_finished_at - time())
+
+
+    def choose_trains(self):
+        '''
+        Ideensammlung für Zugauswahl
+        1. Zu verschiedenen Zeit-Phasen sollen unterschiedlich viele Züge ausgewählt werden
+        2. Wähle Züge aus, deren Ressourcen-Überlappung maximal ist
+        3. Wähle Züge aus, deren Objective-Value am höchsten ist
+        4. Wähle Züge komplett zufällig (kann um 5. erweitert werden)
+        5. Wähle Züge, die schon lange nicht mehr ausgewählt wurden
+        6. Führe ein Scoring auf all diesen aus, um Züge zu wählen, die insgesamt die meisten Kriterien erfüllen
+        '''
+        return sorted(sample(range(len(self.feasible_sol)), 2))
 
 
 def calculate_objective_value(objectives, new_feasible_sol):

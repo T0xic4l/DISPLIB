@@ -1,6 +1,10 @@
-import argparse, json, os, copy
+import argparse, json, os, math, copy
+
+import lns_coordinator
 from data import Instance
 from heuristic import FullInstanceHeuristic, HeuristicalSolver
+from raw_solver import RawSolver
+from logger import Log
 from lns_coordinator import LnsCoordinator
 import networkx as nx
 
@@ -40,18 +44,33 @@ def main():
         return
 
     instance = parse_instance(instance)
+    #decide_solving_strategy(instance)
+
     solving_strategy = 0
+    heuristic_sol = []
+
+
     match solving_strategy:
-        case 0:
-            heuristic_sol = HeuristicalSolver(instance).solve()
-            # heuristic_sol = FullInstanceHeuristic(instance).full_instance_heuristic()
+        case 0: # Just solve the whole instance to feasibility
+            heuristic_sol = HeuristicalSolver(instance, 60).solve()
+        case 1: # Naive heuristic for very large instances that don't use resources at the start and end
+            heuristic_sol = FullInstanceHeuristic(instance).full_instance_heuristic()
+        case 2:
+            heuristic_sol = RawSolver(instance).solve()
         case _:
             heuristic_sol = None
 
-    if heuristic_sol is not None:
-        lns_coordinator = LnsCoordinator(instance, heuristic_sol, 540)
-        log = lns_coordinator.log
-        log.write_final_solution_to_file("Solutions", f"sol_{args.instance}")
+    # coordinator = LnsCoordinator(instance, heuristic_sol, 600)
+    # log = coordinator.log
+    log = Log(heuristic_sol, lns_coordinator.calculate_objective_value(instance.objectives, heuristic_sol))
+    log.write_final_solution_to_file("Solutions", f"sol_{args.instance}")
+
+
+def shift_operations(train, shift, fixed_op):
+    for op, timings in train.items():
+        if op > fixed_op:
+            timings["start"] += shift
+            timings["end"] += shift
 
 
 def decide_solving_strategy(instance : Instance):
@@ -63,47 +82,45 @@ def decide_solving_strategy(instance : Instance):
     2: Take the SolverHeuristic and LNS
     '''
     heuristic_compatibility = check_heuristic_compatibility(instance)
-    trains = len(instance.trains)
-    operations = sum([len(train) for train in instance.trains])
 
-    choice_nodes = 0
-
-    for train in instance.trains:
-        for i, op in enumerate(train):
-            if len(op["successors"]) > 1:
-                choice_nodes += 1
-
-    resource_conflicts_in_total = sum(len(ops) for res, ops in create_resource_conflict_mapping(instance).items())
-    average_resource_conflicts_per_resource = resource_conflicts_in_total/trains
-
+    resource_conflicts = create_resource_conflict_mapping(instance).items()
     deadlock_graph = create_deadlock_graph(instance)
-    deadlocks = list(nx.simple_cycles(deadlock_graph))
-    average_cycle_length = sum(len(cycle) for cycle in deadlocks)
+    cycles = list(nx.simple_cycles(deadlock_graph))
+
+    # ~~~ absolut statistics ~~~
+    trains = len(instance.trains)
+    operations = sum(len(train) for train in instance.trains)
+    choice_nodes = sum(1 for train in instance.trains for op in train if len(op["successors"]) > 1)
+    resources = len(resource_conflicts)
+    resource_conflicts_in_total = sum(len(ops) for res, ops in resource_conflicts)
+    deadlocks = len(cycles)
+
+    # ~~~ relative statistics ~~~
+
+    average_resource_conflicts_per_resource = resource_conflicts_in_total/resources
+    average_cycle_length = sum(len(cycle) for cycle in cycles) / deadlocks
+
 
 
 def create_deadlock_graph(instance : Instance):
-        graph = nx.DiGraph()
-        for i, train in enumerate(instance.trains):
-            for j, op in enumerate(train):
-                for res in op["resources"]:
+    graph = nx.DiGraph()
+    for i, train in enumerate(instance.trains):
+        for j, op in enumerate(train):
+            for res in op["resources"]:
+                for succ in op["successors"]:
+                    for succ_res in train[succ]["resources"]:
+                        edge = (res["resource"], succ_res["resource"])
 
-                    if type(res["release_time"]) == int:
-                        continue
-
-                    for succ in op["successors"]:
-                        for succ_res in train[succ]["resources"]:
-                            edge = (res["resource"], succ_res["resource"])
-
-                            if edge[0] == edge[1]:
-                                continue
-                            if edge in graph.edges:
-                                edge_data = graph[edge[0]][edge[1]].get("data", [])
-                                edge_data.append((i, j))
-                                graph[edge[0]][edge[1]]["data"] = edge_data
-                            else:
-                                graph.add_nodes_from([res["resource"], succ_res["resource"]])
-                                graph.add_edge(edge[0], edge[1], data=[(i, j)])
-        return graph
+                        if edge[0] == edge[1]:
+                            continue
+                        if edge in graph.edges:
+                            edge_data = graph[edge[0]][edge[1]].get("data", [])
+                            edge_data.append((i, j))
+                            graph[edge[0]][edge[1]]["data"] = edge_data
+                        else:
+                            graph.add_nodes_from([res["resource"], succ_res["resource"]])
+                            graph.add_edge(edge[0], edge[1], data=[(i, j)])
+    return graph
 
 
 def create_resource_conflict_mapping(instance : Instance):

@@ -1,5 +1,6 @@
 import itertools
 import random
+from typing import Optional
 
 from LNS_displib_solver import LnsDisplibSolver
 from time import time
@@ -23,14 +24,38 @@ class LnsCoordinator:
         self.current_strategy = random.randint(0, 2)
 
         # actually, 5 seconds might be enough
-        while self.calculate_remaining_time() > 5:
-            choice = self.choose_trains()
 
-            new_feasible_sol = LnsDisplibSolver(self.instance, self.feasible_sol, choice, self.calculate_remaining_time() - 2).solve()
+
+
+    def solve(self, alpha=0.0001, beta=0.1, initial_weight=1):
+        size = 2
+        weights = {"conflict": initial_weight, "objective": initial_weight, "random": initial_weight}
+
+        strategy_functions = {"conflict": lambda s: self.choose_resource_conflicted_trains(s),
+                              "objective": lambda s: self.choose_strongly_delayed_trains(s),
+                              "random": lambda s: self.choose_random_trains(s)}
+
+
+        while self.calculate_remaining_time() > 5:
+            W = sum(w for w in weights.values())
+            iteration_counter = 0
+            if self.no_improvement_count > 10:
+                strategy = "random"
+                self.no_improvement_count = 0
+
+            strategy = random.choices(["conflict", "objective", "random"], weights= [w/W for w in weights.values()], k=1)[0]
+
+            choice = strategy_functions[strategy](size)
+
+            print(f"\nStrategy <{strategy}> with a prob. of {weights[strategy]/W}, weight of {weights[strategy]} was chosen")
+
+            new_feasible_sol = LnsDisplibSolver(self.instance, self.feasible_sol, choice,
+                                                self.calculate_remaining_time() - 2).solve()
             new_objective_value = calculate_objective_value(self.instance.objectives, new_feasible_sol)
 
             if new_objective_value < self.objective:
                 print(f"Found a better solution with objective {new_objective_value} by rescheduling {choice}")
+                weights[strategy] = weights[strategy] + alpha * (self.objective - new_objective_value)
                 self.objective = new_objective_value
                 self.feasible_sol = new_feasible_sol
                 self.log.update_solutions(self.feasible_sol, self.objective)
@@ -38,6 +63,8 @@ class LnsCoordinator:
             else:
                 print(f"No better solution found after rescheduling {choice}")
                 self.no_improvement_count += 1
+                weights[strategy] = weights[strategy] * (1 - beta)
+
 
 
     def calculate_remaining_time(self):
@@ -82,6 +109,9 @@ class LnsCoordinator:
         else:
             return 3
 
+    def choose_random_trains(self, size):
+        return sorted(random.choices([i for i in range(len(self.feasible_sol))], k= size))
+
     def choose_resource_conflicted_trains(self, size):
         resources_per_train = {i: set() for i in range(len(self.feasible_sol))}
         used_resources = set()
@@ -120,8 +150,8 @@ class LnsCoordinator:
                 val = objective_per_train[train] + obj["coeff"] * max(0, self.feasible_sol[train][op]["start"] - obj["threshold"]) + obj["increment"] * (self.feasible_sol[train][op]["start"] - obj["threshold"] > 0) # Sometimes, it does not save the new result...
                 objective_per_train[train] += val
 
-        choice = sorted(objective_per_train, key=objective_per_train.get, reverse=True)[:size]
-        return sorted(objective_per_train, key=objective_per_train.get, reverse=True)[:min(len(self.feasible_sol), size)] # error handling (size may be invalid)
+        choice = sorted(objective_per_train, key=objective_per_train.get, reverse=True)[:min(len(self.feasible_sol), size)]
+        return sorted(choice) # error handling (size may be invalid)
 
 
 def calculate_objective_value(objectives, new_feasible_sol):

@@ -60,7 +60,7 @@ def main():
         case _:
             heuristic_sol = None
 
-    coordinator = LnsCoordinator(instance, heuristic_sol, 585)
+    coordinator = LnsCoordinator(instance, heuristic_sol, 585).solve()
     log = coordinator.log
     log.write_final_solution_to_file("Solutions", f"sol_{args.instance}")
 

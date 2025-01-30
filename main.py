@@ -52,7 +52,7 @@ def main():
 
     match solving_strategy:
         case 0: # Just solve the whole instance to feasibility
-            heuristic_sol = HeuristicalSolver(instance, 60).solve()
+            heuristic_sol = HeuristicalSolver(instance, 15).solve()
         case 1: # Naive heuristic for very large instances that don't use resources at the start and end
             heuristic_sol = FullInstanceHeuristic(instance).full_instance_heuristic()
         case 2:
@@ -60,9 +60,8 @@ def main():
         case _:
             heuristic_sol = None
 
-    # coordinator = LnsCoordinator(instance, heuristic_sol, 600)
-    # log = coordinator.log
-    log = Log(heuristic_sol, lns_coordinator.calculate_objective_value(instance.objectives, heuristic_sol))
+    coordinator = LnsCoordinator(instance, heuristic_sol, 585)
+    log = coordinator.log
     log.write_final_solution_to_file("Solutions", f"sol_{args.instance}")
 
 

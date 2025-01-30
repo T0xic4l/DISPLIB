@@ -83,6 +83,7 @@ class LnsDisplibSolver:
 
 
     def solve(self):
+        self.solver.parameters.log_search_progress = False
         self.solver.parameters.max_time_in_seconds = min(30, self.time_limit - time() + self.current_time) # This is just experimental to prevent time loss for expensive cycles
 
         status = self.solver.Solve(self.model)
@@ -93,6 +94,8 @@ class LnsDisplibSolver:
             and release_times could not be reset once they are set.
             BUT it is possible that we get to optimize a certain train more than once. Because this train is variable again, we get the chance to reset an increased release-time
             IF another train solves the deadlock by increasing the release time, OR the cycle is not active because a the release time of a fixed train is 1. This is exactly what we want. 
+            
+            n + n*(n-1) + n*(n-1)*(n-1)...
             '''
             self.update_feasible_solution()
             return self.feasible_sol

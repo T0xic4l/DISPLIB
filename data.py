@@ -15,6 +15,7 @@ class Instance:
     def get_train_graphs(self):
         if not self.__train_graphs:
             self.__train_graphs = self.create_train_graphs()
+        return self.__train_graphs
 
 
     def get_resource_conflicts(self):

@@ -24,7 +24,7 @@ class LnsCoordinator:
 
     def solve(self, alpha=0.1, beta=0.1, initial_weight=1):
         strategy_weights = {"conflict": initial_weight, "objective": initial_weight, "random": initial_weight, "least_used": initial_weight, "nearest_threshold": initial_weight}
-        size_weights = {size: (1 / size) ** 2 for size in range(1, len(self.instance.trains) + 1)}
+        size_weights = {size: (1 / size) ** 2 for size in [1, 2, 3]} # range(1, len(self.instance.trains) + 1)}
 
         strategy_functions = {"conflict": lambda s: self.choose_resource_conflicted_trains(s),
                               "objective": lambda s: self.choose_strong_overall_delay(s),
@@ -46,6 +46,12 @@ class LnsCoordinator:
             new_feasible_sol = LnsDisplibSolver(self.instance, self.feasible_sol, choice, self.calculate_remaining_time() - 2).solve()
             new_objective_value = calculate_objective_value(self.instance.objectives, new_feasible_sol)
 
+            if new_objective_value == 0:
+                self.objective = new_objective_value
+                self.feasible_sol = new_feasible_sol
+                self.log.set_solution(self.feasible_sol)
+                break
+
             if new_objective_value < self.objective:
                 print(f"Found solution with better objective {new_objective_value} by rescheduling {choice} with <{strategy}>")
 
@@ -56,6 +62,11 @@ class LnsCoordinator:
                 self.feasible_sol = new_feasible_sol
                 self.log.set_solution(self.feasible_sol)
             elif new_objective_value == self.objective:
+                if size == len(self.feasible_sol):
+                    self.objective = new_objective_value
+                    self.feasible_sol = new_feasible_sol
+                    self.log.set_solution(self.feasible_sol)
+
                 print(f"Found solution with same objective {new_objective_value} by rescheduling {choice} with <{strategy}>")
 
                 # Not finding better solutions should be punished
@@ -122,8 +133,9 @@ class LnsCoordinator:
             train = obj["train"]
             op = obj["operation"]
 
-            diff_to_threshold = max(0, self.feasible_sol[train][op]["start"] - obj["threshold"])
-            threshold_overshoot_per_train[train] = min(threshold_overshoot_per_train[train], diff_to_threshold)
+            if self.feasible_sol[train].get(op):
+                diff_to_threshold = max(0, self.feasible_sol[train][op]["start"] - obj["threshold"])
+                threshold_overshoot_per_train[train] = min(threshold_overshoot_per_train[train], diff_to_threshold)
 
         choice = sorted(threshold_overshoot_per_train, key=threshold_overshoot_per_train.get)[:min(len(self.feasible_sol), size)]
         return sorted(choice)

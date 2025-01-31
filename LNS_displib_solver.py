@@ -194,11 +194,7 @@ class LnsDisplibSolver:
     def add_deadlock_constraints(self):
         now = time()
         connected_comps = list(nx.weakly_connected_components(self.deadlock_graph))
-        print(f"Count of connected components: {len(connected_comps)}")
         for comp in connected_comps:
-            print(f"Count of connected resources: {len(comp)}")
-            if len(comp) > len(self.trains):
-                continue
             subgraph = EventSorter.create_subgraph(self.deadlock_graph, comp)
 
             for cycle in nx.simple_cycles(subgraph, len(self.trains)):
@@ -230,8 +226,6 @@ class LnsDisplibSolver:
                 sum_vars.append(all_rts_are_one)
                 self.model.add(sum(self.find_release_time(train, op, res) for train, op, res in var_train_edges) == len(var_train_edges)).OnlyEnforceIf(all_rts_are_one)
                 self.model.add(sum(sum_vars) >= 1)
-
-            print(int(time() - now))
 
 
     def update_feasible_solution(self):

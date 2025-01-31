@@ -56,6 +56,7 @@ def main():
     coordinator = LnsCoordinator(instance, sol, 600 - (time.time() - start))
     coordinator.solve()
     log = coordinator.log
+    # log = Log(sol, instance.objectives)
     log.write_final_solution_to_file("CompetitionSolutions", f"10min_sol_{args.instance}")
 
 

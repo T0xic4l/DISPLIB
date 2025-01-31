@@ -5,12 +5,15 @@ from ortools.sat.python import cp_model as cp
 
 from data import Instance
 from time import time
+from tqdm import tqdm
 
 
 class LnsDisplibSolver:
     def __init__(self, instance : Instance, feasible_solution : list, choice : list, time_limit):
         self.time_limit = time_limit
         self.current_time = time()
+        self.deadlock_constraints_added = True
+
 
         self.old_solution = copy.deepcopy(feasible_solution)
         self.feasible_sol = feasible_solution
@@ -73,8 +76,8 @@ class LnsDisplibSolver:
         self.add_threshold_constraints()
         self.add_path_constraints()
         self.add_timing_constraints()
-        self.add_resource_constrains()
-        self.add_deadlock_constrains()
+        self.add_resource_constraints()
+        self.add_deadlock_constraints()
         self.set_objective()
 
 
@@ -83,9 +86,11 @@ class LnsDisplibSolver:
 
 
     def solve(self):
+        if not self.deadlock_constraints_added:
+            print("Too many cycles. Aborting!")
+            return self.old_solution
         self.solver.parameters.log_search_progress = False
         self.solver.parameters.max_time_in_seconds = min(30, self.time_limit - time() + self.current_time) # This is just experimental to prevent time loss for expensive cycles
-
         status = self.solver.Solve(self.model)
 
         if status == cp.OPTIMAL or status == cp.FEASIBLE:
@@ -142,7 +147,7 @@ class LnsDisplibSolver:
                     self.model.add(self.op_end_vars[train, op] == self.op_start_vars[train, out_edge[1]]).OnlyEnforceIf(self.edge_select_vars[i][out_edge])
 
 
-    def add_resource_constrains(self):
+    def add_resource_constraints(self):
         for res, ops in self.resource_conflicts.items():
             if len(ops) > 1:
                 interval_vars = {}
@@ -180,12 +185,18 @@ class LnsDisplibSolver:
 
 
                 for (t1, op1), (t2, op2) in itertools.combinations(ops, 2):
-                    if t1 in self.choice or t2 in self.choice:
+                    if (t1 in self.choice or t2 in self.choice) and (t1 != t2):
                         self.model.add_no_overlap([interval_vars[t1, op1], interval_vars[t2, op2]])
 
 
-    def add_deadlock_constrains(self):
-        for cycle in list(nx.simple_cycles(self.deadlock_graph)):
+    def add_deadlock_constraints(self):
+        now = time()
+        for cycle in nx.simple_cycles(self.deadlock_graph, len(self.trains)):
+            if time() - now > 10:
+                self.deadlock_constraints_added = False
+                return
+
+
             all_train_edges = []  # Includes lists, one per edge
             var_train_edges = []  # Includes all (train, op, res) with train is in choice
             for edge in itertools.pairwise(cycle + [cycle[0]]):
@@ -210,20 +221,7 @@ class LnsDisplibSolver:
             self.model.add(sum(self.find_release_time(train, op, res) for train, op, res in var_train_edges) == len(var_train_edges)).OnlyEnforceIf(all_rts_are_one)
             self.model.add(sum(sum_vars) >= 1)
 
-
-    def find_cycle_tuple(self, edges, current_tuple, depth):
-        if depth == len(edges):
-            variables = []
-            for train, op, res in current_tuple:
-                if train in self.choice:
-                    variables.append((train, op, res))
-            if len(variables):
-                self.model.add(sum(self.find_release_time(train, op, res) for train, op, res in variables) >= 1)
-            return
-
-        for train_1, op_1, res_1 in edges[depth]:
-            if all(train_1 != train_2 for train_2, op_2, res_2 in current_tuple):
-                self.find_cycle_tuple(edges, current_tuple + [(train_1, op_1, res_1)], depth + 1)
+        print(int(time() - now))
 
 
     def update_feasible_solution(self):
@@ -313,3 +311,48 @@ class LnsDisplibSolver:
                                     graph.add_nodes_from([res["resource"], succ_res["resource"]])
                                     graph.add_edge(edge[0], edge[1], data=[(i, op)])
         return graph
+
+
+    def add_resource_constraintsx(self):
+        for res, ops in tqdm(self.resource_conflicts.items(), desc="Resource-Constraints"):
+            if len(ops) > 1:
+                fixed_interval_vars = {}
+                variable_interval_vars = {}
+
+                for train, op in ops:
+                    if train in self.choice:
+                        op_chosen = self.model.NewBoolVar(name=f"Train {train} : Operation {op} is chosen")
+                        if op == 0 or op == len(self.train_graphs[train].nodes) - 1:
+                            self.model.add(op_chosen == 1)
+                        else:
+                            for i, f_train in enumerate(self.choice):
+                                if train == f_train:
+                                    self.model.add(sum(self.edge_select_vars[i][in_edge] for in_edge in self.train_graphs[train].in_edges(op)) == op_chosen)
+
+                        rt = self.find_release_time(train, op, res)
+                        size = self.model.NewIntVar(lb=0, ub=2 ** 40, name=f"Placeholder var")
+                        end = self.model.NewIntVar(lb=0, ub=2 ** 40, name=f"Placeholder var")
+                        self.model.add(end == self.op_end_vars[train, op] + rt)
+
+                        fixed_interval_vars[train, op] = self.model.NewOptionalIntervalVar(start=self.op_start_vars[train, op],
+                                                                                        end=end,
+                                                                                        size=size,
+                                                                                        is_present=op_chosen,
+                                                                                        name=f"Optional interval for Train {train} : Operation {op}")
+                    else:
+                        rt = 0
+                        for f_res in self.feasible_sol[train][op]["resources"]:
+                            if f_res["resource"] == res:
+                                rt = f_res["release_time"]
+
+                        variable_interval_vars[train, op] = self.model.NewIntervalVar(start=self.feasible_sol[train][op]["start"],
+                                                                                end=self.feasible_sol[train][op]["end"] + rt,
+                                                                                size=self.feasible_sol[train][op]["end"] + rt - self.feasible_sol[train][op]["start"],
+                                                                                name=f"Fix interval for Train {train} : Operation {op}")
+
+                for fixed_IV, variable_IV in itertools.product(list(fixed_interval_vars.values()), list(variable_interval_vars.values())):
+                    self.model.add_no_overlap([fixed_IV, variable_IV])
+
+                for (t1, op1), (t2, op2) in itertools.combinations(list(variable_interval_vars.keys()), 2):
+                    if t1 != t2:
+                        self.model.add_no_overlap([variable_interval_vars[t1, op1], variable_interval_vars[t2, op2]])

@@ -133,7 +133,7 @@ class RawSolver:
         for res, ops in tqdm(self.resource_conflicts.items(), desc="Adding resource-constraints"):
             # If there are multiple operations that use the same resource, a conflict could – in theory – be possible
             if len(ops) > 1:
-                interval_vars = {}
+                nterval_vars = {}
 
                 for train, op in ops:
                     op_chosen = self.model.NewBoolVar(name=f"Train {train} : Operation {op} is chosen")

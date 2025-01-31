@@ -90,17 +90,18 @@ class LnsDisplibSolver:
 
         if status == cp.OPTIMAL or status == cp.FEASIBLE:
             '''
-            At first we thought that solving deadlocks by increasing release times could potentially destroy globally optimal solutions, since we alter the instance
+            At first, we thought that solving deadlocks by increasing release times could potentially destroy globally optimal solutions, since we alter the instance
             and release_times could not be reset once they are set.
             BUT it is possible that we get to optimize a certain train more than once. Because this train is variable again, we get the chance to reset an increased release-time
             IF another train solves the deadlock by increasing the release time, OR the cycle is not active because a the release time of a fixed train is 1. This is exactly what we want. 
-            
-            n + n*(n-1) + n*(n-1)*(n-1)...
             '''
             self.update_feasible_solution()
             return self.feasible_sol
+        elif status == cp.UNKNOWN:
+            print("Model is too large. Return the old solution")
+            return self.old_solution
         else:
-            print("Model is infeasible.")
+            print("Model is either infeasible or invalid. Return the old solution")
             return self.old_solution
 
 
@@ -135,8 +136,7 @@ class LnsDisplibSolver:
         for i, train in enumerate(self.choice):
             for op in range(len(self.train_graphs[train].nodes)):
                 for in_edge in self.train_graphs[train].in_edges(op):
-                    self.model.add(self.op_start_vars[train, in_edge[0]] + self.trains[train][in_edge[0]]["min_duration"] <=
-                                   self.op_start_vars[train, op]).OnlyEnforceIf(self.edge_select_vars[i][in_edge])
+                    self.model.add(self.op_start_vars[train, in_edge[0]] + self.trains[train][in_edge[0]]["min_duration"] <= self.op_start_vars[train, op]).OnlyEnforceIf(self.edge_select_vars[i][in_edge])
 
                 for out_edge in self.train_graphs[train].out_edges(op):
                     self.model.add(self.op_end_vars[train, op] == self.op_start_vars[train, out_edge[1]]).OnlyEnforceIf(self.edge_select_vars[i][out_edge])

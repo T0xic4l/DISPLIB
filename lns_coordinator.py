@@ -1,10 +1,8 @@
 import itertools
 import random
-from typing import Optional
 
 from LNS_displib_solver import LnsDisplibSolver
 from time import time
-from random import sample
 from logger import Log
 
 import copy
@@ -18,99 +16,77 @@ class LnsCoordinator:
         self.start_time = time()
         self.has_to_be_finished_at = self.start_time + time_limit
 
-        self.log = Log(self.feasible_sol, self.objective)
+        self.log = Log(self.feasible_sol, self.instance.objectives)
 
-        self.no_improvement_count = 0
+        self.train_usage = {train: 0 for train in range(len(self.instance.trains))}
         self.current_strategy = random.randint(0, 2)
 
-        # actually, 5 seconds might be enough
 
-
-
-    def solve(self, alpha=0.0001, beta=0.1, initial_weight=1):
-        size = 2
-        weights = {"conflict": initial_weight, "objective": initial_weight, "random": initial_weight}
+    def solve(self, alpha=0.1, beta=0.1, initial_weight=1):
+        strategy_weights = {"conflict": initial_weight, "objective": initial_weight, "random": initial_weight, "least_used": initial_weight, "nearest_threshold": initial_weight}
+        size_weights = {size: (1 / size) ** 2 for size in range(1, min(4, len(self.instance.trains) + 1))}
 
         strategy_functions = {"conflict": lambda s: self.choose_resource_conflicted_trains(s),
-                              "objective": lambda s: self.choose_strongly_delayed_trains(s),
-                              "random": lambda s: self.choose_random_trains(s)}
+                              "objective": lambda s: self.choose_strong_overall_delay(s),
+                              "random": lambda s: self.choose_random_trains(s),
+                              "least_used": lambda s: self.choose_least_used(s),
+                              "nearest_threshold": lambda s: self.choose_nearest_threshold(s)}
 
-
+        # actually, 5 seconds might be enough
         while self.calculate_remaining_time() > 5:
-            W = sum(w for w in weights.values())
-            iteration_counter = 0
-            if self.no_improvement_count > 10:
-                strategy = "random"
-                self.no_improvement_count = 0
+            strategy_W, size_W = sum(w for w in strategy_weights.values()), sum(w for w in size_weights.values())
 
-            strategy = random.choices(["conflict", "objective", "random"], weights= [w/W for w in weights.values()], k=1)[0]
+            strategy = random.choices(["conflict", "objective", "random", "least_used", "nearest_threshold"], weights= [w / strategy_W for w in strategy_weights.values()], k=1)[0]
+            size = random.choices([size for size in range(1, len(size_weights.keys()) + 1)], weights=[w / size_W for w in size_weights.values()], k=1)[0]
 
             choice = strategy_functions[strategy](size)
+            for train in choice:
+                self.train_usage[train] += 1
 
-            print(f"\nStrategy <{strategy}> with a prob. of {weights[strategy]/W}, weight of {weights[strategy]} was chosen")
-
-            new_feasible_sol = LnsDisplibSolver(self.instance, self.feasible_sol, choice,
-                                                self.calculate_remaining_time() - 2).solve()
+            new_feasible_sol = LnsDisplibSolver(self.instance, self.feasible_sol, choice, self.calculate_remaining_time() - 2).solve()
             new_objective_value = calculate_objective_value(self.instance.objectives, new_feasible_sol)
 
             if new_objective_value < self.objective:
-                print(f"Found a better solution with objective {new_objective_value} by rescheduling {choice}")
-                weights[strategy] = weights[strategy] + alpha * (self.objective - new_objective_value)
+                print(f"Found solution with better objective {new_objective_value} by rescheduling {choice} with <{strategy}>")
+
+                strategy_weights[strategy] = strategy_weights[strategy] + alpha * (self.objective / new_objective_value)
+                size_weights[size] = size_weights[size] + alpha * (self.objective / new_objective_value)
+
                 self.objective = new_objective_value
                 self.feasible_sol = new_feasible_sol
-                self.log.update_solutions(self.feasible_sol, self.objective)
-                self.no_improvement_count = 0
+                self.log.set_solution(self.feasible_sol)
+            elif new_objective_value == self.objective:
+                print(f"Found solution with same objective {new_objective_value} by rescheduling {choice} with <{strategy}>")
+
+                # Not finding better solutions should be punished
+                strategy_weights[strategy] = strategy_weights[strategy] * (1 - beta)
+                size_weights[size] = size_weights[size] * (1 - beta)
+
+                self.objective = new_objective_value
+                self.feasible_sol = new_feasible_sol
+                self.log.set_solution(self.feasible_sol)
             else:
-                print(f"No better solution found after rescheduling {choice}")
-                self.no_improvement_count += 1
-                weights[strategy] = weights[strategy] * (1 - beta)
+                print(f"Found solution with worse objective after rescheduling {choice} with <{strategy}>. Discarding solution.")
+                # But returning a worse solution should be punished way harder
+                strategy_weights[strategy] = strategy_weights[strategy] * (1 - beta) / 4
+                size_weights[size] = size_weights[size] * (1 - beta) / 4
+
+        print(f"The weights were <{strategy_weights}> : <{size_weights.items()}>")
 
 
 
     def calculate_remaining_time(self):
         return max(0, self.has_to_be_finished_at - time())
 
-    '''
-    Ideensammlung für Zugauswahl:
-    
-    VORERST CHECK   1. Zu verschiedenen Zeit-Phasen sollen unterschiedlich viele Züge ausgewählt werden
-    CHECK           2. Wähle Züge aus, deren Ressourcen-Überlappung maximal ist
-    CHECK           3. Wähle Züge aus, deren Objective-Value am höchsten ist
-    VORERST CHECK   4. Wähle Züge komplett zufällig (kann um 5. erweitert werden)
-    5. Wähle Züge, die schon lange nicht mehr ausgewählt wurden
-    6. Führe ein Scoring auf all diesen aus, um Züge zu wählen, die insgesamt die meisten Kriterien erfüllen
-    '''
-    def choose_trains(self):
-        size = self.choose_choice_size()
 
-        if self.no_improvement_count >= 10:
-            self.current_strategy = random.randint(0, 2)
-            self.no_improvement_count = 0
+    def choose_least_used(self, size):
+        choice = sorted(self.train_usage, key=self.train_usage.get)[:min(len(self.feasible_sol), size)]
+        return sorted(choice)  # error handling (size may be invalid)
 
-        match self.current_strategy:
-            case 0:
-                return sorted(self.choose_resource_conflicted_trains(size))
-            case 1:
-                return sorted(self.choose_strongly_delayed_trains(size))
-            case 2:
-                return sorted(random.sample([i for i in range(len(self.instance.trains))], size))
-
-
-    def choose_choice_size(self):
-        current_time = time()
-        if current_time - self.start_time <= 60:
-            return 1
-        elif current_time - self.start_time <= 200:
-            return 2
-        elif current_time - self.start_time <= 360 and len(self.instance.trains) <= 100:
-            return 3
-        elif current_time - self.start_time <= 500 and len(self.instance.trains) <= 50:
-            return 4
-        else:
-            return 3
 
     def choose_random_trains(self, size):
-        return sorted(random.choices([i for i in range(len(self.feasible_sol))], k= size))
+        return sorted(random.sample([i for i in range(len(self.feasible_sol))], k=size))
+
 
     def choose_resource_conflicted_trains(self, size):
         resources_per_train = {i: set() for i in range(len(self.feasible_sol))}
@@ -139,7 +115,31 @@ class LnsCoordinator:
         return sorted(choice)
 
 
-    def choose_strongly_delayed_trains(self, size):
+    def choose_nearest_threshold(self, size):
+        threshold_overshoot_per_train = {i: 2 ** 40 for i in range(len(self.feasible_sol))} # Not very smart but will do for now
+
+        for obj in self.instance.objectives:
+            train = obj["train"]
+            op = obj["operation"]
+
+            diff_to_threshold = max(0, self.feasible_sol[train][op]["start"] - obj["threshold"])
+            threshold_overshoot_per_train[train] = min(threshold_overshoot_per_train[train], diff_to_threshold)
+
+        choice = sorted(threshold_overshoot_per_train, key=threshold_overshoot_per_train.get)[:min(len(self.feasible_sol), size)]
+        return sorted(choice)
+
+
+    def choose_strong_linear_delay(self, size):
+        # To be implemented
+        pass
+
+
+    def choose_strong_increment_delay(self, size):
+        # To be implemented
+        pass
+
+
+    def choose_strong_overall_delay(self, size):
         objective_per_train = {i: 0 for i in range(len(self.feasible_sol))}
 
         for obj in self.instance.objectives:
@@ -160,7 +160,7 @@ def calculate_objective_value(objectives, new_feasible_sol):
         train = obj["train"]
         op = obj["operation"]
 
-        if op in new_feasible_sol[train].keys():
-            value += (obj["coeff"] * max(0, new_feasible_sol[train][op]["start"] - obj["threshold"]) + obj["increment"] * (new_feasible_sol[train][op]["start"] - obj["threshold"] >= 0))
+        if op in list(new_feasible_sol[train].keys()):
+            value += (obj["coeff"] * max(0, new_feasible_sol[train][op]["start"] - obj["threshold"]) + obj["increment"] * (1 if new_feasible_sol[train][op]["start"] >= obj["threshold"] else 0))
 
     return value

@@ -1,8 +1,10 @@
 import argparse, json, os, math, copy
+import time
+from copy import deepcopy
 
 import lns_coordinator
 from data import Instance
-from heuristic import FullInstanceHeuristic, HeuristicalSolver
+from heuristic import FullInstanceHeuristic, HeuristicalSolver, FirstSolutionCallback
 from raw_solver import RawSolver
 from logger import Log
 from lns_coordinator import LnsCoordinator
@@ -44,25 +46,90 @@ def main():
         return
 
     instance = parse_instance(instance)
-    #decide_solving_strategy(instance)
+    start = time.time()
 
-    solving_strategy = 0
-    heuristic_sol = []
+    while True:
+        sol = calculate_heuristic_solution(instance)
+        if sol is not None:
+            break
 
-
-    match solving_strategy:
-        case 0: # Just solve the whole instance to feasibility
-            heuristic_sol = HeuristicalSolver(instance, 15).solve()
-        case 1: # Naive heuristic for very large instances that don't use resources at the start and end
-            heuristic_sol = FullInstanceHeuristic(instance).full_instance_heuristic()
-        case 2:
-            heuristic_sol = RawSolver(instance).solve()
-        case _:
-            heuristic_sol = None
-
-    coordinator = LnsCoordinator(instance, heuristic_sol, 585).solve()
+    coordinator = LnsCoordinator(instance, sol, 600 - (time.time() - start))
+    coordinator.solve()
     log = coordinator.log
-    log.write_final_solution_to_file("Solutions", f"sol_{args.instance}")
+    log.write_final_solution_to_file("CompetitionSolutions", f"10min_sol_{args.instance}")
+
+
+def calculate_heuristic_solution(instance : Instance):
+    start = time.time()
+    partial_instance_a = split_for_heuristic_compatibility(instance.trains)
+
+    if partial_instance_a:
+        objective_a = [obj for obj in instance.objectives if obj["train"] in list(partial_instance_a.keys())]
+        sol_a = FullInstanceHeuristic(instance=Instance(list(partial_instance_a.values()), objective_a)).full_instance_heuristic()
+
+        if len(partial_instance_a) == len(instance.trains):
+            return sol_a
+
+        partial_instance_b = {i: train for i, train in enumerate(instance.trains) if i not in list(partial_instance_a.keys())}
+        list_b = list(partial_instance_b.values())
+        objective_b = []
+        train_mapping = dict()
+
+        for i, train_nr in enumerate(partial_instance_b.keys()):
+            train_mapping[train_nr] = i
+        for obj in instance.objectives:
+            if obj["train"] in list(partial_instance_b.keys()):
+                obj_c = deepcopy(obj)
+                obj_c["train"] = train_mapping[obj["train"]]
+                objective_b.append(obj_c)
+
+
+        sol_b = HeuristicalSolver(Instance(list_b, objective_b), 30).solve()
+        sol = merge_solutions(list(partial_instance_a.keys()), sol_a, sol_b)
+        return sol
+    else:
+        return HeuristicalSolver(instance, 600 - (time.time() - start)).solve()
+
+def merge_solutions(trains_a, sol_a, sol_b,):
+    '''
+    Params: sol_a has to be the sol of the compatible part
+    compatible_trains is a list of train_nrs that were compatible: sol_a is the sol of them
+    sol_b trains will start first because they block resources at their first op
+    '''
+    train_count = (len(sol_a) + len(sol_b))
+    sol = [None] * train_count
+    end = 0
+    max_rt = 0
+
+    for train in sol_b:
+        for op, timings in train.items():
+            for res in timings["resources"]:
+                max_rt = max(max_rt, res["release_time"])
+            end = max(end, timings["end"])
+
+    for i, train in enumerate(trains_a):
+        shift_operations(sol_a[i], end + max_rt, 0)
+        sol[train] = sol_a[i]
+
+    none_counter = 0
+    for i, s in enumerate(sol):
+        if not s:
+            sol[i] = sol_b[none_counter]
+            none_counter += 1
+
+    pass
+    return sol
+
+
+def split_for_heuristic_compatibility(trains):
+    compatible_trains = dict()
+    for train_nr, train in enumerate(trains):
+        if check_heuristic_compatibility([train]):
+            compatible_trains[train_nr] = train
+    comp = len(compatible_trains)
+    total = len(trains)
+    pass
+    return compatible_trains if len(compatible_trains) else None
 
 
 def shift_operations(train, shift, fixed_op):
@@ -70,21 +137,24 @@ def shift_operations(train, shift, fixed_op):
         if op > fixed_op:
             timings["start"] += shift
             timings["end"] += shift
+        elif op == fixed_op:
+            timings["end"] += shift
 
 
 def decide_solving_strategy(instance : Instance):
     '''
     Decides Solving Strategy
-    :return:
-    0: Take the displib_solver as one
-    1: Take the FullInstance-Heuristic and LNS
-    2: Take the SolverHeuristic and LNS
-    '''
-    heuristic_compatibility = check_heuristic_compatibility(instance)
 
+    0: Take the SolverHeuristic and LNS
+    1: Take the FullInstance-Heuristic and LNS
+    2: Take the displib_solver as one
+    '''
+    heuristic_compatibility = check_heuristic_compatibility(instance.trains)
+
+    '''
     resource_conflicts = create_resource_conflict_mapping(instance).items()
     deadlock_graph = create_deadlock_graph(instance)
-    cycles = list(nx.simple_cycles(deadlock_graph))
+    # cycles = list(nx.simple_cycles(deadlock_graph))
 
     # ~~~ absolut statistics ~~~
     trains = len(instance.trains)
@@ -92,13 +162,17 @@ def decide_solving_strategy(instance : Instance):
     choice_nodes = sum(1 for train in instance.trains for op in train if len(op["successors"]) > 1)
     resources = len(resource_conflicts)
     resource_conflicts_in_total = sum(len(ops) for res, ops in resource_conflicts)
-    deadlocks = len(cycles)
+    # deadlocks = len(cycles)
 
     # ~~~ relative statistics ~~~
-
     average_resource_conflicts_per_resource = resource_conflicts_in_total/resources
-    average_cycle_length = sum(len(cycle) for cycle in cycles) / deadlocks
+    # average_cycle_length = sum(len(cycle) for cycle in cycles) / deadlocks
+    '''
 
+    if heuristic_compatibility:
+        return 1
+    else:
+        return 0
 
 
 def create_deadlock_graph(instance : Instance):
@@ -136,17 +210,18 @@ def create_resource_conflict_mapping(instance : Instance):
     return resource_conflicts
 
 
-def check_heuristic_compatibility(instance : Instance):
+def check_heuristic_compatibility(trains):
     # check if every first operation does not use resources
-    for train in instance.trains:
+    for train in trains:
         if len(train[0]["resources"]):
             return False
 
     # check if each operation except the 0. of a train has no default start_ub
-    for train in instance.trains:
+    for train in trains:
         for _, op in enumerate(train, start=1):
             if op["start_ub"] > 2 ** 40:
                 return False
+
     return True
 
 if __name__ == "__main__":
@@ -155,8 +230,3 @@ if __name__ == "__main__":
     parser.add_argument("--debug", action="store_true", help="Activates debug-mode. If set, a resource-allocation-graph and the operations_graph of each train (with chosen paths) will be created.")
     args = parser.parse_args()
     main()
-
-
-
-
-

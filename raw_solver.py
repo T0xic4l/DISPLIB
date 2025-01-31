@@ -1,4 +1,3 @@
-import networkx as nx
 import itertools
 from tqdm import tqdm
 from ortools.sat.python import cp_model as cp
@@ -69,9 +68,15 @@ class RawSolver:
             for i, train in enumerate(self.trains):
                 train_solution = {}
                 for j, op in enumerate(train):
-                    train_solution.update({j: {"start": self.solver.value(self.op_start_vars[i, j]),
-                                                "end": self.solver.value(self.op_end_vars[i, j]),
-                                                "resources": op["resources"]}})
+                    for succ in op["successors"]:
+                        if self.solver.value(self.edge_select_vars[i][j, succ]):
+                            train_solution.update({j: {"start": self.solver.value(self.op_start_vars[i, j]),
+                                                        "end": self.solver.value(self.op_end_vars[i, j]),
+                                                        "resources": op["resources"]}})
+                    if j == len(train) - 1:
+                        train_solution.update({j: {"start": self.solver.value(self.op_start_vars[i, j]),
+                                                   "end": self.solver.value(self.op_end_vars[i, j]),
+                                                   "resources": op["resources"]}})
                 feasible_sol.append(train_solution)
             return feasible_sol
         else:
@@ -125,7 +130,7 @@ class RawSolver:
 
 
     def add_resource_constraints(self):
-        for i, (res, ops) in enumerate(tqdm(self.resource_conflicts.items(), desc="Adding resource-constraints")):
+        for res, ops in tqdm(self.resource_conflicts.items(), desc="Adding resource-constraints"):
             # If there are multiple operations that use the same resource, a conflict could – in theory – be possible
             if len(ops) > 1:
                 interval_vars = {}
@@ -135,7 +140,7 @@ class RawSolver:
                     if op == 0 or op == len(self.train_graphs[train].nodes) - 1:
                         self.model.add(op_chosen == 1)
                     else:
-                        self.model.add(sum(self.edge_select_vars[i][in_edge] for in_edge in self.train_graphs[train].in_edges(op)) == op_chosen)
+                        self.model.add(sum(self.edge_select_vars[train][in_edge] for in_edge in self.train_graphs[train].in_edges(op)) == op_chosen)
 
                     rt = self.find_release_time(train, op, res)
                     size = self.model.NewIntVar(lb=0, ub=2 ** 40, name=f"Placeholder var")
@@ -170,6 +175,7 @@ class RawSolver:
                 continue
 
             self.find_cycle_tuple(edges, [], 0)
+
 
     def set_objective(self):
         self.model.minimize(sum(

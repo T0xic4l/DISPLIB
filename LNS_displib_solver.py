@@ -7,6 +7,8 @@ from data import Instance
 from time import time
 from tqdm import tqdm
 
+from event_sorter import EventSorter
+
 
 class LnsDisplibSolver:
     def __init__(self, instance : Instance, feasible_solution : list, choice : list, time_limit):
@@ -191,37 +193,45 @@ class LnsDisplibSolver:
 
     def add_deadlock_constraints(self):
         now = time()
-        for cycle in nx.simple_cycles(self.deadlock_graph, len(self.trains)):
-            if time() - now > 10:
-                self.deadlock_constraints_added = False
-                return
+        connected_comps = list(nx.weakly_connected_components(self.deadlock_graph))
+        print(f"Count of connected components: {len(connected_comps)}")
+        for comp in connected_comps:
+            print(f"Count of connected resources: {len(comp)}")
+            if len(comp) > len(self.trains):
+                continue
+            subgraph = EventSorter.create_subgraph(self.deadlock_graph, comp)
+
+            for cycle in nx.simple_cycles(subgraph, len(self.trains)):
+                if time() - now > 10:
+                    self.deadlock_constraints_added = False
+                    return
 
 
-            all_train_edges = []  # Includes lists, one per edge
-            var_train_edges = []  # Includes all (train, op, res) with train is in choice
-            for edge in itertools.pairwise(cycle + [cycle[0]]):
-                all_edges = []
-                edge_data = self.deadlock_graph[edge[0]][edge[1]].get("data", [])
+                all_train_edges = []  # Includes lists, one per edge
+                var_train_edges = []  # Includes all (train, op, res) with train is in choice
+                for edge in itertools.pairwise(cycle + [cycle[0]]):
+                    all_edges = []
+                    edge_data = self.deadlock_graph[edge[0]][edge[1]].get("data", [])
 
-                for train, op in edge_data:
-                    all_edges.append((train, op, edge[0]))
-                    if train in self.choice:
-                        var_train_edges.append((train, op, edge[0]))
-                all_train_edges.append(all_edges)
+                    for train, op in edge_data:
+                        all_edges.append((train, op, edge[0]))
+                        if train in self.choice:
+                            var_train_edges.append((train, op, edge[0]))
+                    all_train_edges.append(all_edges)
 
-            sum_vars = []
-            for edges in all_train_edges:
-                sum_var = self.model.NewBoolVar(name="")
-                sum_vars.append(sum_var)
-                release_times = [self.find_release_time(train, op, res) for train, op, res in edges]
-                self.model.add(sum(release_times) == len(release_times)).OnlyEnforceIf(sum_var)
+                sum_vars = []
+                for edges in all_train_edges:
+                    sum_var = self.model.NewBoolVar(name="")
+                    sum_vars.append(sum_var)
+                    release_times = [self.find_release_time(train, op, res) for train, op, res in edges]
+                    self.model.add(sum(release_times) == len(release_times)).OnlyEnforceIf(sum_var)
 
-            all_rts_are_one = self.model.NewBoolVar(name="")
-            sum_vars.append(all_rts_are_one)
-            self.model.add(sum(self.find_release_time(train, op, res) for train, op, res in var_train_edges) == len(var_train_edges)).OnlyEnforceIf(all_rts_are_one)
-            self.model.add(sum(sum_vars) >= 1)
+                all_rts_are_one = self.model.NewBoolVar(name="")
+                sum_vars.append(all_rts_are_one)
+                self.model.add(sum(self.find_release_time(train, op, res) for train, op, res in var_train_edges) == len(var_train_edges)).OnlyEnforceIf(all_rts_are_one)
+                self.model.add(sum(sum_vars) >= 1)
 
-        print(int(time() - now))
+            print(int(time() - now))
 
 
     def update_feasible_solution(self):
@@ -270,6 +280,12 @@ class LnsDisplibSolver:
 
     def create_deadlock_graph(self):
         graph = nx.DiGraph()
+        critical_resources = []
+        for train in self.choice:
+            for op in self.trains[train]:
+                for res in op["resources"]:
+                    critical_resources.append(res["resource"])
+
 
         for i, train in enumerate(self.trains):
             if i in self.choice:
@@ -301,7 +317,7 @@ class LnsDisplibSolver:
                             for succ_res in train[succ]["resources"]:
                                 edge = (res["resource"], succ_res["resource"])
 
-                                if edge[0] == edge[1]:
+                                if (edge[0] == edge[1]) or (edge[0] not in critical_resources) or (edge[1] not in critical_resources):
                                     continue
                                 if edge in graph.edges:
                                     edge_data = graph[edge[0]][edge[1]].get("data", [])

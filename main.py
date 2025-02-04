@@ -39,14 +39,20 @@ def parse_instance(instance):
 
 def main():
     try:
-        with open(os.path.join("Instances", args.instance), 'r') as file:
+        with open(os.path.join("Phase1Instances", args.instance), 'r') as file:
             instance = json.load(file)
     except FileNotFoundError:
         print(f"File {args.instance} was not found")
         return
 
-    instance = parse_instance(instance)
     start = time.time()
+    instance = parse_instance(instance)
+
+    if args.rawsolve:
+        log = RawSolver(instance).solve()
+        log.write_final_solution_to_file("Solutions", f"raw_sol_{args.instance}")
+        log.write_log_to_file("Logs", f"raw_log_{args.instance}")
+        return
 
     while True:
         sol = calculate_heuristic_solution(instance)
@@ -55,9 +61,7 @@ def main():
 
     coordinator = LnsCoordinator(instance, sol, 600 - (time.time() - start))
     coordinator.solve()
-    log = coordinator.log
-    # log = Log(sol, instance.objectives)
-    log.write_final_solution_to_file("CompetitionSolutions", f"10min_sol_{args.instance}")
+    coordinator.log.write_final_solution_to_file("Solutions", f"10min_sol_{args.instance}")
 
 
 def calculate_heuristic_solution(instance : Instance):
@@ -228,6 +232,6 @@ def check_heuristic_compatibility(trains):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(prog="DISPLIB-Solver", description="By Lina Breuer, Sebastian Brunke, Elias Kaiser, Felix Michel")
     parser.add_argument('instance', help="Filename of the instance that needs to be solved. The solution of the instance will be saved in Solutions/ as sol_<instance>. The instance has to be located in Instances/", type=str)
-    # parser.add_argument("--debug", action="store_true", help="Activates debug-mode. If set, a resource-allocation-graph and the operations_graph of each train (with chosen paths) will be created.")
+    parser.add_argument("--rawsolve", action="store_true", help="If set, the instance will be solved a whole.")
     args = parser.parse_args()
     main()

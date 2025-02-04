@@ -1,16 +1,61 @@
-import itertools
+import itertools, copy
+import networkx as nx
+
 from tqdm import tqdm
+from time import time
 from ortools.sat.python import cp_model as cp
+from event_sorter import EventSorter
+from logger import Log
+
+
+class IntermediateSolutionCallback(cp.CpSolverSolutionCallback):
+    def __init__(self, trains, edge_select_vars, op_start_vars, op_end_vars, objectives):
+        super().__init__()
+        self.trains = trains
+        self.edge_select_vars = edge_select_vars
+        self.op_start_vars = op_start_vars
+        self.op_end_vars = op_end_vars
+        self.objectives = objectives
+
+    def on_solution_callback(self):
+        feasible_sol = []
+
+        for i, train in enumerate(self.trains):
+            train_solution = {}
+            for j, op in enumerate(train):
+                for succ in op["successors"]:
+                    if self.value(self.edge_select_vars[i][j, succ]):
+                        rts = []
+                        for res in op["resources"]:
+                            value = copy.deepcopy(res)
+                            if type(res["release_time"]) != int:
+                                value["release_time"] = self.value(res["release_time"])
+                            rts.append(value)
+                        train_solution.update({j: {"start": self.value(self.op_start_vars[i, j]),
+                                                   "end": self.value(self.op_end_vars[i, j]),
+                                                   "resources": rts}})
+                if j == len(train) - 1:
+                    train_solution.update({j: {"start": self.value(self.op_start_vars[i, j]),
+                                               "end": self.value(self.op_end_vars[i, j]),
+                                               "resources": op["resources"]}})
+            feasible_sol.append(train_solution)
+
+        log = Log(feasible_sol, self.objectives)
+        log.write_final_solution_to_file("Solutions", f"intermediate_solution.json")
+
+        return
+
 
 
 class RawSolver:
     def __init__(self, instance):
+        self.build_time = time()
+
         self.trains = instance.trains
         self.objectives = instance.objectives
         self.train_graphs = instance.get_train_graphs()
         self.resource_conflicts = instance.get_resource_conflicts()  # A mapping from a resource to a list of operations using this operation
         self.deadlock_graph = instance.create_deadlock_graph()
-        self.deadlocks = instance.get_deadlocks()
 
         self.model = cp.CpModel()
         self.solver = cp.CpSolver()
@@ -53,23 +98,31 @@ class RawSolver:
 
         self.set_objective()
 
+        self.callback = IntermediateSolutionCallback(self.trains, self.edge_select_vars, self.op_start_vars, self.op_end_vars, self.objectives)
+        self.build_time = time() - self.build_time
+
 
     def solve(self):
         self.solver.parameters.log_search_progress = True
-        self.solver.parameters.max_time_in_seconds = 600
         self.solver.parameters.symmetry_level = 3
 
-        status = self.solver.Solve(self.model)
+        self.solve_time = time()
+        status = self.solver.SolveWithSolutionCallback(self.model, self.callback)
+        # status = self.solver.Solve(self.model)
+        self.solve_time = time() - self.solve_time
+        feasible_sol = []
 
         if status == cp.OPTIMAL or status == cp.FEASIBLE:
             print(f"Optimal Solution found with objective value found of {round(self.solver.objective_value)}")
-            feasible_sol = []
 
             for i, train in enumerate(self.trains):
                 train_solution = {}
                 for j, op in enumerate(train):
                     for succ in op["successors"]:
                         if self.solver.value(self.edge_select_vars[i][j, succ]):
+                            for res in op["resources"]:
+                                if type(res["release_time"]) != int:
+                                    res["release_time"] = self.solver.value(res["release_time"])
                             train_solution.update({j: {"start": self.solver.value(self.op_start_vars[i, j]),
                                                         "end": self.solver.value(self.op_end_vars[i, j]),
                                                         "resources": op["resources"]}})
@@ -78,10 +131,15 @@ class RawSolver:
                                                    "end": self.solver.value(self.op_end_vars[i, j]),
                                                    "resources": op["resources"]}})
                 feasible_sol.append(train_solution)
-            return feasible_sol
         else:
             print(f"Model is infeasible!")
-            return {-1: {"start": -1, "end": -1, "resources": []}}
+            feasible_sol.append({-1: {"start": -1, "end": -1, "resources": []}})
+
+        log = Log(feasible_sol, self.objectives)
+        log.set_status_code(status)
+        log.set_elapsed_time({"build_time": round(self.build_time, 2), "solve_time": round(self.solve_time, 2)})
+        log.set_best_bound(self.solver.best_objective_bound)
+        return log
 
 
     def add_threshold_constraints(self):
@@ -133,7 +191,7 @@ class RawSolver:
         for res, ops in tqdm(self.resource_conflicts.items(), desc="Adding resource-constraints"):
             # If there are multiple operations that use the same resource, a conflict could – in theory – be possible
             if len(ops) > 1:
-                nterval_vars = {}
+                interval_vars = {}
 
                 for train, op in ops:
                     op_chosen = self.model.NewBoolVar(name=f"Train {train} : Operation {op} is chosen")
@@ -161,20 +219,25 @@ class RawSolver:
 
 
     def add_deadlock_constraints(self):
-        for cycle in tqdm(self.deadlocks, desc="Adding Deadlock-Constraints"):
-            edges = []
-            for edge in itertools.pairwise(cycle + [cycle[0]]):
-                edge_data = self.deadlock_graph[edge[0]][edge[1]].get("data", [])
-                edges.append([(u, v, edge[0]) for u, v in edge_data])
+        connected_comps = list(nx.weakly_connected_components(self.deadlock_graph))
+        for comp in tqdm(connected_comps, desc="Adding Deadlock-Constraints"):
+            subgraph = EventSorter.create_subgraph(self.deadlock_graph, comp)
 
-            # sort edges by amount of trains
-            edges.sort(key=lambda l: len(set([train for train, op, res in l])))
+            for cycle in nx.simple_cycles(subgraph, len(self.trains)):
+                edges = []
 
-            # Do a quick pre-check to find cycles that would never create a deadlock
-            if not check_n_trains_in_n_cycle(edges):
-                continue
+                for edge in itertools.pairwise(cycle + [cycle[0]]):
+                    edge_data = self.deadlock_graph[edge[0]][edge[1]].get("data", [])
+                    edges.append([(u, v, edge[0]) for u, v in edge_data])
 
-            self.find_cycle_tuple(edges, [], 0)
+                # sort edges by amount of trains
+                edges.sort(key=lambda l: len(set([train for train, op, res in l])))
+
+                # Do a quick pre-check to find cycles that would never create a deadlock
+                if not check_n_trains_in_n_cycle(edges):
+                    continue
+
+                self.find_cycle_tuple(edges, [], 0)
 
 
     def set_objective(self):

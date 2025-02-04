@@ -203,12 +203,12 @@ class HeuristicalSolver:
 
 
     def solve(self):
-        self.solver.parameters.log_search_progress = False
+        self.solver.parameters.log_search_progress = True
         self.solver.parameters.symmetry_level = 3
         self.solver.parameters.max_time_in_seconds = self.time_limit
 
-        # status = self.solver.SolveWithSolutionCallback(self.model, self.callback)
-        status = self.solver.Solve(self.model)
+        status = self.solver.SolveWithSolutionCallback(self.model, self.callback)
+        # status = self.solver.Solve(self.model)
 
         if status in (cp.FEASIBLE, cp.OPTIMAL):
             print(f"Initial solution found")

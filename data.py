@@ -70,7 +70,7 @@ class Instance:
             for j, op in enumerate(train):
                 for res in op["resources"]:
 
-                    if type(res["release_time"]) == 0:
+                    if res["release_time"] != 0:
                         continue
 
                     for succ in op["successors"]:

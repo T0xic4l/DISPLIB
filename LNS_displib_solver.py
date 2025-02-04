@@ -5,7 +5,6 @@ from ortools.sat.python import cp_model as cp
 
 from data import Instance
 from time import time
-from tqdm import tqdm
 
 from event_sorter import EventSorter
 

@@ -1,5 +1,7 @@
 import json
 import os
+import math
+
 from event_sorter import EventSorter
 from copy import deepcopy
 
@@ -7,16 +9,36 @@ class Log:
     def __init__(self, feasible_sol, objectives):
         self.__obj = objectives
         self.__feasible_sol = deepcopy(feasible_sol)
+        self.__status_code = None
+        self.__elapsed_time = None
+        self.__best_bound = None
 
 
     def set_solution(self, feasible_sol):
         self.__feasible_sol = deepcopy(feasible_sol)
 
 
+    def set_status_code(self, status_code):
+        self.__status_code = status_code
+
+
+    def set_elapsed_time(self, elapsed_time):
+        self.__elapsed_time = elapsed_time
+
+
+    def set_best_bound(self, best_bound):
+        self.__best_bound = math.floor(best_bound)
+
+
     def write_final_solution_to_file(self, path, filename):
         event_sorter = EventSorter(self.__feasible_sol)
         with open(os.path.join(path, filename), 'w') as file:
             file.write(json.dumps({"objective_value": self.calculate_objective_value(), "events": event_sorter.events}))
+
+
+    def write_log_to_file(self, path, filename):
+        with open(os.path.join(path, filename), 'w') as file:
+            file.write(json.dumps({"elapsed_time": self.__elapsed_time, "status_code": self.__status_code, "best_bound": self.__best_bound}))
 
 
     def calculate_objective_value(self):

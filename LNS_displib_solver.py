@@ -79,6 +79,8 @@ class LnsDisplibSolver:
         self.add_timing_constraints()
         self.add_resource_constraints()
         self.add_deadlock_constraints()
+        self.add_solution_hint()
+
         self.set_objective()
 
 
@@ -86,12 +88,23 @@ class LnsDisplibSolver:
         self.model.minimize(sum(obj["coeff"] * self.threshold_vars[obj["train"], obj["operation"]] + obj["increment"] * self.threshold_vars[obj["train"], obj["operation"]] for obj in self.objectives if obj["train"] in self.choice))
 
 
+    def add_solution_hint(self):
+        for i, train in enumerate(self.choice):
+            pre = None
+            for op, timings in self.feasible_sol[train].items():
+                if pre is not None:
+                    self.model.add_hint(self.edge_select_vars[i][(pre, op)], 1)
+                pre = op
+                self.model.add_hint(self.op_start_vars[train, op], timings["start"])
+                self.model.add_hint(self.op_end_vars[train, op], timings["end"])
+
+
     def solve(self):
         if not self.deadlock_constraints_added:
             print("Too many cycles. Aborting!")
             return self.old_solution
         self.solver.parameters.log_search_progress = False
-        self.solver.parameters.max_time_in_seconds = min(45, self.time_limit - time() + self.current_time) # This is just experimental to prevent time loss for expensive cycles
+        self.solver.parameters.max_time_in_seconds = min(30, self.time_limit - time() + self.current_time) # This is just experimental to prevent time loss for expensive cycles
         status = self.solver.Solve(self.model)
 
         if status == cp.OPTIMAL or status == cp.FEASIBLE:

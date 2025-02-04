@@ -53,7 +53,7 @@ class LnsCoordinator:
                 break
 
             if new_objective_value < self.objective:
-                print(f"Found solution with better objective {new_objective_value} by rescheduling {choice} with <{strategy}>")
+                print(f"Found solution with better objective {new_objective_value} by rescheduling {choice} increasing <{strategy}> by {alpha * (self.objective / new_objective_value)}")
 
                 strategy_weights[strategy] = strategy_weights[strategy] + alpha * (self.objective / new_objective_value)
                 size_weights[size] = size_weights[size] + alpha * (self.objective / new_objective_value)
@@ -62,7 +62,7 @@ class LnsCoordinator:
                 self.feasible_sol = new_feasible_sol
                 self.log.set_solution(self.feasible_sol)
             elif new_objective_value == self.objective:
-                print(f"Found solution with same objective {new_objective_value} by rescheduling {choice} with <{strategy}>")
+                print(f"Found solution with same objective {new_objective_value} by rescheduling {choice} decreasing <{strategy}> by {strategy_weights[strategy] - strategy_weights[strategy] * (1 - beta)}")
 
                 # Not finding better solutions should be punished
                 strategy_weights[strategy] = strategy_weights[strategy] * (1 - beta)

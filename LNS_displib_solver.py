@@ -91,7 +91,7 @@ class LnsDisplibSolver:
             print("Too many cycles. Aborting!")
             return self.old_solution
         self.solver.parameters.log_search_progress = False
-        self.solver.parameters.max_time_in_seconds = min(30, self.time_limit - time() + self.current_time) # This is just experimental to prevent time loss for expensive cycles
+        self.solver.parameters.max_time_in_seconds = min(45, self.time_limit - time() + self.current_time) # This is just experimental to prevent time loss for expensive cycles
         status = self.solver.Solve(self.model)
 
         if status == cp.OPTIMAL or status == cp.FEASIBLE:
@@ -197,7 +197,7 @@ class LnsDisplibSolver:
             subgraph = EventSorter.create_subgraph(self.deadlock_graph, comp)
 
             for cycle in nx.simple_cycles(subgraph, len(self.trains)):
-                if time() - now > 10:
+                if time() - now > 5:
                     self.deadlock_constraints_added = False
                     return
 

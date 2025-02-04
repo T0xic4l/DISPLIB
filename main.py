@@ -61,7 +61,7 @@ def main():
 
     coordinator = LnsCoordinator(instance, sol, 600 - (time.time() - start))
     coordinator.solve()
-    coordinator.log.write_final_solution_to_file("Solutions", f"10min_sol_{args.instance}")
+    coordinator.log.write_final_solution_to_file("Solutions", f"10min_sol2_{args.instance}")
 
 
 def calculate_heuristic_solution(instance : Instance):

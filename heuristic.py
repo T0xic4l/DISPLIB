@@ -4,15 +4,116 @@
 # 2. There is no start_ub for any operation except the first of each train
 
 import copy, itertools, random
+import time
+from copy import deepcopy
 from ortools.sat.python import cp_model as cp
 
+from data import Instance
 
-class FullInstanceHeuristic:
+
+def calculate_heuristic_solution(instance : Instance):
+    start = time.time()
+    sequential_trains = get_sequential_trains(instance.trains)
+
+    if sequential_trains:
+        objective_a = [obj for obj in instance.objectives if obj["train"] in list(sequential_trains.keys())]
+        sequential_sol = SequentialTrainScheduler(instance=Instance(list(sequential_trains.values()), objective_a)).solve()
+
+        if len(sequential_trains) == len(instance.trains):
+            return sequential_sol
+
+        non_sequential_trains = {i: train for i, train in enumerate(instance.trains) if i not in list(sequential_trains.keys())}
+        non_sequential_objectives = []
+        train_mapping = dict()
+
+        for i, train_nr in enumerate(non_sequential_trains.keys()):
+            train_mapping[train_nr] = i
+        for obj in instance.objectives:
+            if obj["train"] in list(non_sequential_trains.keys()):
+                # TODO: Check if copying is necessary
+                obj_c = deepcopy(obj)
+                obj_c["train"] = train_mapping[obj["train"]]
+                non_sequential_objectives.append(obj_c)
+
+        non_sequential_instance = Instance(list(non_sequential_trains.values()), non_sequential_objectives)
+
+        # The heuristic will chose A SINGLE but RANDOM path through the operations graph for each train. Since it is possible, that this random choice leads to an unresolvable deadlock,
+        # we have to restart the heuristic until a feasible solution is found
+        while not (non_sequential_sol := NonSequentialTrainScheduler(non_sequential_instance, 30).solve()):
+            pass
+        sol = merge_solutions(list(sequential_trains.keys()), sequential_sol, non_sequential_sol)
+    else:
+        while not (sol := NonSequentialTrainScheduler(instance, 600 - (time.time() - start)).solve()):
+            pass
+    return sol
+
+
+def merge_solutions(trains_a, sol_a, sol_b,):
+    '''
+    Params: sol_a has to be the sol of the compatible part
+    compatible_trains is a list of train_nrs that were compatible: sol_a is the sol of them
+    sol_b trains will start first because they block resources at their first op
+    '''
+    train_count = (len(sol_a) + len(sol_b))
+    sol = [None] * train_count
+    end = 0
+    max_rt = 0
+
+    for train in sol_b:
+        for op, timings in train.items():
+            for res in timings["resources"]:
+                max_rt = max(max_rt, res["release_time"])
+            end = max(end, timings["end"])
+
+    for i, train in enumerate(trains_a):
+        shift_operations(sol_a[i], end + max_rt, 0)
+        sol[train] = sol_a[i]
+
+    none_counter = 0
+    for i, s in enumerate(sol):
+        if not s:
+            sol[i] = sol_b[none_counter]
+            none_counter += 1
+    pass
+    return sol
+
+
+def get_sequential_trains(trains):
+    sequential_trains = dict()
+
+    for train_nr, train in enumerate(trains):
+        if check_sequential_compatibility(train):
+            sequential_trains[train_nr] = train
+
+    return sequential_trains if len(sequential_trains) else None
+
+
+def shift_operations(train, shift, fixed_op):
+    for op, timings in train.items():
+        if op > fixed_op:
+            timings["start"] += shift
+            timings["end"] += shift
+        elif op == fixed_op:
+            timings["end"] += shift
+
+
+def check_sequential_compatibility(train):
+    # check if first operation of the train does not use resources
+    if train[0]["resources"]:
+        return False
+
+    # check if each operation except the first of a train has no default start_ub
+    for _, op in enumerate(train, start=1):
+        if op["start_ub"] > 2 ** 40:
+            return False
+    return True
+
+
+class SequentialTrainScheduler:
     def __init__(self, instance):
         self.instance = instance
 
-
-    def full_instance_heuristic(self):
+    def solve(self):
         solution = []
         current_time = 0
         max_pred_rt = 0
@@ -47,7 +148,7 @@ class FirstSolutionCallback(cp.CpSolverSolutionCallback):
         self.StopSearch()  # Suche abbrechen nach der ersten Lösung
 
 
-class HeuristicalSolver:
+class NonSequentialTrainScheduler:
     def __init__(self, instance, time_limit):
         self.time_limit = time_limit
 

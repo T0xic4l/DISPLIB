@@ -23,7 +23,7 @@ class LnsDisplibSolver:
         self.instance = copy.deepcopy(instance)
         self.trains = self.instance.trains
         self.objectives = self.instance.objectives
-        self.train_graphs = self.instance.get_train_graphs()
+        self.train_graphs = self.create_train_graphs()
 
         self.model = cp.CpModel()
         self.solver = cp.CpSolver()
@@ -108,12 +108,6 @@ class LnsDisplibSolver:
         status = self.solver.Solve(self.model)
 
         if status == cp.OPTIMAL or status == cp.FEASIBLE:
-            '''
-            At first, we thought that solving deadlocks by increasing release times could potentially destroy globally optimal solutions, since we alter the instance
-            and release_times could not be reset once they are set.
-            BUT it is possible that we get to optimize a certain train more than once. Because this train is variable again, we get the chance to reset an increased release-time
-            IF another train solves the deadlock by increasing the release time, OR the cycle is not active because a the release time of a fixed train is 1. This is exactly what we want. 
-            '''
             self.update_feasible_solution()
             return self.feasible_sol
         elif status == cp.UNKNOWN:
@@ -333,3 +327,15 @@ class LnsDisplibSolver:
                                     graph.add_nodes_from([res["resource"], succ_res["resource"]])
                                     graph.add_edge(edge[0], edge[1], data=[(i, op)])
         return graph
+
+
+    def create_train_graphs(self):
+        train_graphs = []
+        for train in self.trains:
+            graph = nx.DiGraph()
+            graph.add_nodes_from([i for i, _ in enumerate(train)])
+
+            for i, operation in enumerate(train):
+                graph.add_edges_from([(i, v) for v in operation["successors"]])
+            train_graphs.append(graph)
+        return train_graphs

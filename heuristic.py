@@ -173,7 +173,7 @@ class NonSequentialTrainScheduler:
                 self.op_end_vars[i, j] = self.model.NewIntVar(lb=op["start_lb"] + op["min_duration"], ub=2 ** 40,
                                                               name=f"End of Train {i} : Operation {j}")
 
-                # Create a mapping that maps a ressource to the list of operations using that ressource
+                # Create a mapping that maps a resource to the list of operations using that resource
                 for res in op["resources"]:
                     if j != 0 and not res["release_time"]:
                         res["release_time"] = 1

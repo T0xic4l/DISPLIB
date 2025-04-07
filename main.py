@@ -33,7 +33,7 @@ def parse_instance(instance):
 
 def main():
     try:
-        with open(os.path.join("Phase1Instances", args.instance), 'r') as file:
+        with open(os.path.join("Instances", args.instance), 'r') as file:
             instance = json.load(file)
     except FileNotFoundError:
         print(f"File {args.instance} was not found")

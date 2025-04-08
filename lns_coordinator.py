@@ -25,6 +25,7 @@ class LnsCoordinator:
     def solve(self, alpha=0.1, beta=0.1, initial_weight=1):
         print("Starting LNS...")
         # TODO: Maybe change the weights up in the future...
+        # TODO: Alternativ: So lange strategien verwenden wie sie etwas verbessern -> erst dann wechseln, wenn sie keine Verbesserung mehr bringen
         strategy_weights = {"conflict": initial_weight, "objective": initial_weight, "random": initial_weight, "least_used": initial_weight, "nearest_threshold": initial_weight}
         size_weights = {size: (1 / size) ** 2 for size in range(1, len(self.instance.trains) + 1)}
 

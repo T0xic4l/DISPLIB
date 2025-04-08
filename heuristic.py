@@ -276,13 +276,9 @@ class NonSequentialTrainScheduler:
 
         for res, ops in self.trains_per_res.items():
             if len(ops) > 1:
-                intervals_per_train = defaultdict(list)
-
-                for train, op in ops:
-                    intervals_per_train[train].append(interval_vars[train, op])
-
-                for interval in itertools.product(*intervals_per_train.values()):
-                    self.model.add_no_overlap(interval)
+                for (t1, op1), (t2, op2) in itertools.combinations(ops, 2):
+                    if t1 != t2:
+                        self.model.add_no_overlap([interval_vars[t1, op1], interval_vars[t2, op2]])
 
 
     def add_resource_constraints(self):

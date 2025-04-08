@@ -2,7 +2,6 @@ import networkx as nx
 import itertools
 import copy
 from ortools.sat.python import cp_model as cp
-from collections import defaultdict
 
 from data import Instance
 from time import time
@@ -160,7 +159,6 @@ class LnsDisplibSolver:
         for res, ops in self.resource_conflicts.items():
             if len(ops) > 1:
                 interval_vars = {}
-                intervals_per_train = defaultdict(list)
 
                 for train, op in ops:
                     if train in self.choice:
@@ -181,7 +179,7 @@ class LnsDisplibSolver:
                                                                                         end=end,
                                                                                         size=size,
                                                                                         is_present=op_chosen,
-                                                                                        name="optional")
+                                                                                        name=f"Optional interval for Train {train} : Operation {op}")
                     else:
                         rt = 0
                         for f_res in self.feasible_sol[train][op]["resources"]:
@@ -191,16 +189,12 @@ class LnsDisplibSolver:
                         interval_vars[train, op] = self.model.NewIntervalVar(start=self.feasible_sol[train][op]["start"],
                                                                                 end=self.feasible_sol[train][op]["end"] + rt,
                                                                                 size=self.feasible_sol[train][op]["end"] + rt - self.feasible_sol[train][op]["start"],
-                                                                                name="fix")
+                                                                                name=f"Fix interval for Train {train} : Operation {op}")
 
 
-                    intervals_per_train[train].append(interval_vars[train, op])
-
-                for interval in itertools.product(*intervals_per_train.values()):
-                    for var in interval:
-                        if var.Name() == "optional":
-                            self.model.add_no_overlap(interval)
-                            break
+                for (t1, op1), (t2, op2) in itertools.combinations(ops, 2):
+                    if (t1 in self.choice or t2 in self.choice) and (t1 != t2):
+                        self.model.add_no_overlap([interval_vars[t1, op1], interval_vars[t2, op2]])
 
 
     def add_deadlock_constraints(self):

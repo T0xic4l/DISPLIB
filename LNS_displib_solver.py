@@ -57,6 +57,11 @@ class LnsDisplibSolver:
                         select_vars[j, s] = self.model.NewBoolVar(name=f"Train {i} : Edge<{j},{s}>")
                 self.edge_select_vars.append(select_vars)
             else:
+                # TODO: Fix this shit!
+                '''
+                Warum zur Hölle sollte man hier auch Ressourcen aufführen, die von den variablen Zügen nicht verwendet werden?!
+                Schließlich sind das dann Intevalle, die absolut nichts beitragen...
+                '''
                 for op in self.feasible_sol[i].keys():
                     for res in self.trains[i][op]["resources"]:
                         if res["resource"] in self.resource_conflicts.keys():
@@ -181,6 +186,11 @@ class LnsDisplibSolver:
                                                                                         is_present=op_chosen,
                                                                                         name=f"Optional interval for Train {train} : Operation {op}")
                     else:
+                        # TODO: Fix this shit!
+                        '''
+                        Wie oben erklärt, interessieren uns nur Intervalle von Ressourcen, die auch von den Variablen Zügen verwendet werden könnten.
+                        Wenn eine Ressource eines fixen Zuges nicht in den variablen Zügen verwendet wird, dann sollten die Intervalle dazu auch nicht im Model auftauchen!
+                        '''
                         rt = 0
                         for f_res in self.feasible_sol[train][op]["resources"]:
                             if f_res["resource"] == res:

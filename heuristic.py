@@ -6,6 +6,7 @@
 import itertools, random
 import time
 from copy import deepcopy
+from collections import defaultdict
 
 import networkx as nx
 from ortools.sat.python import cp_model as cp
@@ -162,7 +163,7 @@ class TrainScheduler:
         self.increment_release_times()
         self.trains = instance.trains
         self.objectives = instance.objectives
-        self.resource_appearances = self.count_resource_appearances()
+        self.resource_appearances, self.train_resource_usage = self.count_resource_appearances("connected")
 
 
     def increment_release_times(self):
@@ -173,17 +174,27 @@ class TrainScheduler:
                         res["release_time"] = 1
 
 
-    def count_resource_appearances(self):
+    def count_resource_appearances(self, mode):
         resource_appearances = {}
-        for train in self.trains:
-            for i, op in enumerate(train):
-                for res in op["resources"]:
-                    if res["resource"] not in resource_appearances.keys():
-                        resource_appearances[res["resource"]] = (1 - self.succ_uses_res(train, i, res["resource"]))
-                    else:
-                        resource_appearances[res["resource"]] += (1 - self.succ_uses_res(train, i, res["resource"]))
+        train_resource_usage = {}
 
-        return resource_appearances
+        '''
+        Wir haben herausgefunden, dass ein Zug eine Ressource maximal einmal belegt und sie dann für immer freigibt. Dementsprechend reicht es,
+        einfach die Ressourcen eines Zuges zu sammeln und das Vorkommen um 1 zu inkrementieren
+        '''
+        if mode == "connected":
+            for i, train in enumerate(self.trains):
+                used_resources = set()
+                for j, op in enumerate(train):
+                    for res in op["resources"]:
+                        used_resources.add(res["resource"])
+                for res in used_resources:
+                    if resource_appearances.get(res) is not None:
+                        resource_appearances[res] += 1
+                    else:
+                        resource_appearances[res] = 1
+                train_resource_usage[i] = list(used_resources)
+        return resource_appearances, train_resource_usage
 
 
     def succ_uses_res(self, train, op, res):
@@ -201,9 +212,11 @@ class TrainScheduler:
 
         while len(unscheduled_trains):
             to_schedule = random.choice(unscheduled_trains)
-            sol = TrainSolver(self.instance, feasible_solution, scheduled_trains, to_schedule).solve()
+            sol = TrainSolver(self.instance, feasible_solution, scheduled_trains, to_schedule, self.resource_appearances, self.train_resource_usage).solve()
 
             while not sol:
+                # update resource_appearances
+
                 reset_train = random.choice(scheduled_trains)
                 print(f"No schedule for train {to_schedule}. Unscheduling {reset_train}")
 
@@ -211,8 +224,9 @@ class TrainScheduler:
                 unscheduled_trains.append(reset_train)
 
                 feasible_solution[reset_train] = {}
-                sol = TrainSolver(self.instance, feasible_solution, scheduled_trains, to_schedule).solve()
+                sol = TrainSolver(self.instance, feasible_solution, scheduled_trains, to_schedule, self.resource_appearances, self.train_resource_usage).solve()
 
+            print(f"Successfully scheduled Train {to_schedule}")
             feasible_solution = sol
             unscheduled_trains.remove(to_schedule)
             scheduled_trains.append(to_schedule)
@@ -222,12 +236,14 @@ class TrainScheduler:
 
 
 class TrainSolver:
-    def __init__(self, instance, feasible_solution, fix_trains, choice):
+    def __init__(self, instance, feasible_solution, fix_trains, choice, resource_evaluation, train_resource_usage):
         self.choice = [choice]
         self.fix_trains = fix_trains
         self.feasible_solution = feasible_solution
         self.trains = instance.trains
         self.train_graphs = self.create_train_graphs()
+        self.resource_evaluation = resource_evaluation
+        self.train_resource_usage = train_resource_usage
 
         self.model = cp.CpModel()
         self.solver = cp.CpSolver()
@@ -237,10 +253,14 @@ class TrainSolver:
         self.op_start_vars = dict()
         self.op_end_vars = dict()
         self.edge_select_vars = list()
-        self.resource_usage_vars = dict()
+        self.resource_usage_vars = defaultdict(dict)
 
         for i in self.choice:
             select_vars = {}
+
+            for res in self.train_resource_usage[i]:
+                self.resource_usage_vars[i][res] = self.model.new_bool_var(name=f"Train {i} uses resource {res}")
+
             for j, op in enumerate(self.trains[i]):
                 self.op_start_vars[i, j] = self.model.NewIntVar(lb=op["start_lb"], ub=op["start_ub"],
                                                                 name=f"Start of Train {i} : Operation {j}")
@@ -267,7 +287,14 @@ class TrainSolver:
 
         self.add_path_constraints()
         self.add_timing_constraints()
-        self.add_resource_constraints()
+        self.add_resource_conflict_constraints()
+        self.add_resource_usage_constraints()
+
+        self.set_objective()
+
+
+    def set_objective(self):
+        self.model.minimize(sum(sum(self.resource_evaluation[res] * var for res, var in self.resource_usage_vars[i].items()) for i in self.choice))
 
 
     def add_path_constraints(self):
@@ -294,7 +321,8 @@ class TrainSolver:
                     self.model.add(self.op_end_vars[train, op] == self.op_start_vars[train, out_edge[1]]).OnlyEnforceIf(self.edge_select_vars[i][out_edge])
 
 
-    def add_resource_constraints(self):
+
+    def add_resource_conflict_constraints(self):
         for res, ops in self.resource_conflicts.items():
             if len(ops) > 1:
                 interval_vars = {}
@@ -335,15 +363,38 @@ class TrainSolver:
                         self.model.add_no_overlap([interval_vars[t1, op1], interval_vars[t2, op2]])
 
 
-    def solve(self):
-        self.solver.parameters.log_search_progress = False
-        status = self.solver.Solve(self.model)
+    def add_resource_usage_constraints(self):
+        for i, train in enumerate(self.choice):
+            for j, op in enumerate(self.trains[train]):
+                out_edges = self.train_graphs[train].out_edges(j)
+                for res in op["resources"]:
+                    self.model.add(sum(self.edge_select_vars[i][out_e] for out_e in out_edges) == 0).OnlyEnforceIf(self.resource_usage_vars[train][res["resource"]].Not())
 
-        if status == cp.OPTIMAL or status == cp.FEASIBLE:
+
+    def solve(self):
+        path_status = self.solver.Solve(self.model)
+
+        if path_status == cp.OPTIMAL or path_status == cp.FEASIBLE:
             self.update_feasible_solution()
-            return self.feasible_solution
-        else:
-            return None
+            self.fix_path()
+
+            self.model.clear_objective()
+            self.model.minimize(sum(self.op_start_vars[choice, len(self.trains[choice]) - 1] for choice in self.choice))
+            time_status = self.solver.Solve(self.model)
+
+            if time_status == cp.OPTIMAL or time_status == cp.FEASIBLE:
+                self.update_feasible_solution()
+                return self.feasible_solution
+        return None
+
+
+    def fix_path(self):
+        for i, train in enumerate(self.choice):
+            for j, op in enumerate(self.trains[train]):
+                for succ in op["successors"]:
+                    if round(self.solver.value(self.edge_select_vars[i][j, succ])):
+                        self.model.add(self.edge_select_vars[i][j, succ] == 1)
+        return
 
 
     def create_train_graphs(self):

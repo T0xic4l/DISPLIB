@@ -30,8 +30,7 @@ def repeated_resource_usage(trains):
                             graph.add_nodes_from([res["resource"], succ_res["resource"]])
                             graph.add_edge(edge[0], edge[1])
 
-    print(len(graph.nodes))
-    print(len(graph.edges))
-    print(len(list(nx.simple_cycles(graph))))
+    if len(list(nx.simple_cycles(graph))):
+        return True
 
     return False

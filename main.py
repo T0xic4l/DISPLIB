@@ -3,7 +3,7 @@ import time
 from copy import deepcopy
 
 from data import Instance
-from heuristic import calculate_heuristic_solution
+from heuristic import Heuristic
 from logger import Log
 from instance_properties import check_properties
 from lns_coordinator import LnsCoordinator
@@ -51,17 +51,15 @@ def main():
 
 
 def solve_instance(instance):
-    start = time.time()
-    sol = calculate_heuristic_solution(deepcopy(instance))
+    log = Heuristic(deepcopy(instance)).schedule()
 
     if args.debug:
-        log = Log(sol, instance.objectives)
-        log.write_final_solution_to_file("HeuristicSolutions", f"heuristic_sol_{args.instance}")
-        print(f"Found for {args.instance}. Elapsed time: {time.time() - start}")
+        log.write_final_solution_to_file("HeuristicSolutions", f"heuristic_sol2_{args.instance}")
+        log.write_log_to_file("Logs", f"log_{args.instance}")
+        print(f"Found for {args.instance}. Elapsed time: {time.time() - log.start}")
     else:
-        coordinator = LnsCoordinator(instance, sol, 600 - (time.time() - start))
-        coordinator.solve()
-        coordinator.log.write_final_solution_to_file("Solutions", f"10min_sol2_{args.instance}")
+        LnsCoordinator(instance, log, 600 - (time.time() - log.start)).solve()
+        log.write_final_solution_to_file("Solutions", f"10min_sol2_{args.instance}")
 
 
 if __name__ == "__main__":

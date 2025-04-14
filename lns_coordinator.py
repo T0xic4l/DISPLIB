@@ -3,20 +3,17 @@ import random
 
 from LNS_displib_solver import LnsDisplibSolver
 from time import time
-from logger import Log
-
-import copy
 
 class LnsCoordinator:
-    def __init__(self, instance, feasible_sol, time_limit):
+    def __init__(self, instance, log, time_limit):
         self.instance = instance
-        self.feasible_sol = copy.deepcopy(feasible_sol)
+        self.feasible_sol = log.get_solution()
         self.objective = calculate_objective_value(self.instance.objectives, self.feasible_sol)
 
         self.start_time = time()
         self.has_to_be_finished_at = self.start_time + time_limit
 
-        self.log = Log(self.feasible_sol, self.instance.objectives)
+        self.log = log
 
         self.train_usage = {train: 0 for train in range(len(self.instance.trains))}
         self.current_strategy = random.randint(0, 4)

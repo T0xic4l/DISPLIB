@@ -1,253 +1,29 @@
-# added verify to check heuristic solutions
-# warning: There are some assumptions about the given instance
-# 1. There is no release_time for any resource and for any operation
-# 2. There is no start_ub for any operation except the first of each train
-
 import itertools, random
+import networkx as nx
 import time
+
 from copy import deepcopy
 from collections import defaultdict
-
-import networkx as nx
 from ortools.sat.python import cp_model as cp
-
-from data import Instance
-
-
-def calculate_heuristic_solution(instance : Instance):
-    start = time.time()
-    sequential_trains = get_sequential_trains(instance.trains)
-
-    if sequential_trains:
-        objective_a = [obj for obj in instance.objectives if obj["train"] in list(sequential_trains.keys())]
-        sequential_sol = SequentialTrainScheduler(instance=Instance(list(sequential_trains.values()), objective_a)).solve()
-
-        if len(sequential_trains) == len(instance.trains):
-            return sequential_sol
-
-        non_sequential_trains = {i: train for i, train in enumerate(instance.trains) if i not in list(sequential_trains.keys())}
-        non_sequential_objectives = []
-        train_mapping = dict()
-
-        for i, train_nr in enumerate(non_sequential_trains.keys()):
-            train_mapping[train_nr] = i
-        for obj in instance.objectives:
-            if obj["train"] in list(non_sequential_trains.keys()):
-                # TODO: Check if copying is necessary
-                obj_c = deepcopy(obj)
-                obj_c["train"] = train_mapping[obj["train"]]
-                non_sequential_objectives.append(obj_c)
-
-        non_sequential_instance = Instance(list(non_sequential_trains.values()), non_sequential_objectives)
-
-        # The heuristic will chose A SINGLE but RANDOM path through the operations graph for each train. Since it is possible, that this random choice leads to an unresolvable deadlock,
-        # we have to restart the heuristic until a feasible solution is found
-        while not (non_sequential_sol := TrainScheduler(non_sequential_instance, 600 - (time.time() - start)).schedule()):
-            pass
-        sol = merge_solutions(list(sequential_trains.keys()), sequential_sol, non_sequential_sol)
-    else:
-        while not (sol := TrainScheduler(instance, 600 - (time.time() - start)).schedule()):
-            pass
-    return sol
-
-
-def merge_solutions(trains_a, sol_a, sol_b,):
-    '''
-    Params: sol_a has to be the sol of the compatible part
-    compatible_trains is a list of train_nrs that were compatible: sol_a is the sol of them
-    sol_b trains will start first because they block resources at their first op
-    '''
-    train_count = (len(sol_a) + len(sol_b))
-    sol = [None] * train_count
-    end = 0
-    max_rt = 0
-
-    for train in sol_b:
-        for op, timings in train.items():
-            for res in timings["resources"]:
-                max_rt = max(max_rt, res["release_time"])
-            end = max(end, timings["end"])
-
-    for i, train in enumerate(trains_a):
-        shift_operations(sol_a[i], end + max_rt, 0)
-        sol[train] = sol_a[i]
-
-    none_counter = 0
-    for i, s in enumerate(sol):
-        if not s:
-            sol[i] = sol_b[none_counter]
-            none_counter += 1
-    pass
-    return sol
-
-
-def get_sequential_trains(trains):
-    sequential_trains = dict()
-
-    for train_nr, train in enumerate(trains):
-        if check_sequential_compatibility(train):
-            sequential_trains[train_nr] = train
-
-    return sequential_trains if len(sequential_trains) else None
-
-
-def shift_operations(train, shift, fixed_op):
-    for op, timings in train.items():
-        if op > fixed_op:
-            timings["start"] += shift
-            timings["end"] += shift
-        elif op == fixed_op:
-            timings["end"] += shift
-
-
-def check_sequential_compatibility(train):
-    # check if first operation of the train does not use resources
-    if train[0]["resources"]:
-        return False
-
-    # check if each operation except the first of a train has no default start_ub
-    for _, op in enumerate(train, start=1):
-        if op["start_ub"] > 2 ** 40:
-            return False
-    return True
-
-
-class SequentialTrainScheduler:
-    def __init__(self, instance):
-        self.instance = instance
-
-    def solve(self):
-        solution = []
-        current_time = 0
-        max_pred_rt = 0
-
-        for i, train in enumerate(self.instance.trains):
-
-            train_solution = {}
-
-            op = 0
-            train_solution.update({0: {"start": 0, "end": max(train[0]["min_duration"], current_time + max_pred_rt), "resources": self.instance.trains[i][op]["resources"]}})
-            current_time = train_solution[0]["end"]
-
-            while op != len(train) - 1:
-                op = train[op]["successors"][0]
-                current_time = max(current_time, train[op]["start_lb"])
-                train_solution.update({op: {"start": current_time, "end": current_time + train[op]["min_duration"], "resources": self.instance.trains[i][op]["resources"]}})
-                current_time = train_solution[op]["end"]
-
-            solution.append(train_solution)
-
-            max_pred_rt = max(res["release_time"] for op in train for res in op["resources"])
-
-        return solution
-
-
-class FirstSolutionCallback(cp.CpSolverSolutionCallback):
-    def __init__(self):
-        super().__init__()
-
-
-    def on_solution_callback(self):
-        self.StopSearch()  # Suche abbrechen nach der ersten Lösung
-
-
-class TrainScheduler:
-    '''
-    Was wir ab jetzt alles testen müssen:
-    - Scheduled Züge nicht rausschmeißen sondern nach aktualisiertem Bewertungsschema neu planen. Eine konfliktfreie Route für alle existiert ja, aber vielleicht gibt es noch bessere
-    - Ressourcen müssen sinnvoll bestraft werden. Selten aufkommende Ressourcen werden nicht automatisch direkt schlecht, wenn fast alle Vorkommen wirklich genutzt werden
-    '''
-
-    def __init__(self, instance, time_limit):
-        self.instance = instance
-        self.increment_release_times()
-        self.trains = instance.trains
-        self.objectives = instance.objectives
-        self.resource_appearances, self.train_resource_usage = self.count_resource_appearances("connected")
-
-
-    def increment_release_times(self):
-        for train in self.instance.trains:
-            for op in train:
-                for res in op["resources"]:
-                    if res["release_time"] == 0:
-                        res["release_time"] = 1
-
-
-    def count_resource_appearances(self, mode):
-        resource_appearances = {}
-        train_resource_usage = {}
-
-        '''
-        Wir haben herausgefunden, dass ein Zug eine Ressource maximal einmal belegt und sie dann für immer freigibt. Dementsprechend reicht es,
-        einfach die Ressourcen eines Zuges zu sammeln und das Vorkommen um 1 zu inkrementieren
-        '''
-        if mode == "connected":
-            for i, train in enumerate(self.trains):
-                used_resources = set()
-                for j, op in enumerate(train):
-                    for res in op["resources"]:
-                        used_resources.add(res["resource"])
-                for res in used_resources:
-                    if resource_appearances.get(res) is not None:
-                        resource_appearances[res] += 1
-                    else:
-                        resource_appearances[res] = 1
-                train_resource_usage[i] = list(used_resources)
-        return resource_appearances, train_resource_usage
-
-
-    def succ_uses_res(self, train, op, res):
-        for succ in train[op]["successors"]:
-            for succ_res in train[succ]["resources"]:
-                if succ_res["resource"] == res:
-                    return 1
-        return 0
-
-
-    def schedule(self):
-        feasible_solution = [{} for _ in range(len(self.trains))]                                                         # feasible solution format
-        scheduled_trains = []
-        unscheduled_trains = [i for i in range(len(self.trains))]
-
-        while len(unscheduled_trains):
-            to_schedule = random.choice(unscheduled_trains)
-            sol = TrainSolver(self.instance, feasible_solution, scheduled_trains, to_schedule, self.resource_appearances, self.train_resource_usage).solve()
-
-            while not sol:
-                # update resource_appearances
-
-                reset_train = random.choice(scheduled_trains)
-                print(f"No schedule for train {to_schedule}. Unscheduling {reset_train}")
-
-                scheduled_trains.remove(reset_train)
-                unscheduled_trains.append(reset_train)
-
-                feasible_solution[reset_train] = {}
-                sol = TrainSolver(self.instance, feasible_solution, scheduled_trains, to_schedule, self.resource_appearances, self.train_resource_usage).solve()
-
-            print(f"Successfully scheduled Train {to_schedule}")
-            feasible_solution = sol
-            unscheduled_trains.remove(to_schedule)
-            scheduled_trains.append(to_schedule)
-            scheduled_trains.sort()
-
-        return feasible_solution
+from logger import Log
 
 
 class TrainSolver:
-    def __init__(self, instance, feasible_solution, fix_trains, choice, resource_evaluation, train_resource_usage):
-        self.choice = [choice]
+    def __init__(self, instance, feasible_solution, fix_trains, choice, resource_evaluation, train_resource_usage, start):
+        self.start = start
+        self.choice = choice
         self.fix_trains = fix_trains
         self.feasible_solution = feasible_solution
         self.trains = instance.trains
         self.train_graphs = self.create_train_graphs()
         self.resource_evaluation = resource_evaluation
         self.train_resource_usage = train_resource_usage
+        self.conflicted_resources = set()
+        for train in self.choice:
+            self.conflicted_resources.update(self.train_resource_usage[train])
 
         self.model = cp.CpModel()
         self.solver = cp.CpSolver()
-        self.callback = FirstSolutionCallback()
 
         self.resource_conflicts = dict()  # A mapping from a resource to a list of operations using this operation
         self.op_start_vars = dict()
@@ -264,6 +40,7 @@ class TrainSolver:
             for j, op in enumerate(self.trains[i]):
                 self.op_start_vars[i, j] = self.model.NewIntVar(lb=op["start_lb"], ub=op["start_ub"],
                                                                 name=f"Start of Train {i} : Operation {j}")
+
                 self.op_end_vars[i, j] = self.model.NewIntVar(lb=op["start_lb"] + op["min_duration"], ub=2 ** 40,
                                                               name=f"End of Train {i} : Operation {j}")
 
@@ -280,10 +57,11 @@ class TrainSolver:
         for j in fix_trains:
             for op in self.feasible_solution[j].keys():
                 for res in self.trains[j][op]["resources"]:
-                    if res["resource"] in self.resource_conflicts.keys():
-                        self.resource_conflicts[res["resource"]].append((j, op))
-                    else:
-                        self.resource_conflicts[res["resource"]] = [(j, op)]
+                    if res["resource"] in self.conflicted_resources:
+                        if res["resource"] in self.resource_conflicts.keys():
+                            self.resource_conflicts[res["resource"]].append((j, op))
+                        else:
+                            self.resource_conflicts[res["resource"]] = [(j, op)]
 
         self.add_path_constraints()
         self.add_timing_constraints()
@@ -295,6 +73,7 @@ class TrainSolver:
 
     def set_objective(self):
         self.model.minimize(sum(sum(self.resource_evaluation[res] * var for res, var in self.resource_usage_vars[i].items()) for i in self.choice))
+        return
 
 
     def add_path_constraints(self):
@@ -319,6 +98,11 @@ class TrainSolver:
 
                 for out_edge in self.train_graphs[train].out_edges(op):
                     self.model.add(self.op_end_vars[train, op] == self.op_start_vars[train, out_edge[1]]).OnlyEnforceIf(self.edge_select_vars[i][out_edge])
+
+            self.model.add(self.op_end_vars[train, 0] >= self.start)
+            last_op = len(self.trains[train]) - 1
+            self.model.add(self.op_end_vars[train, last_op] == self.op_start_vars[train, last_op] + self.trains[train][last_op]["min_duration"])
+
 
 
 
@@ -375,17 +159,17 @@ class TrainSolver:
         path_status = self.solver.Solve(self.model)
 
         if path_status == cp.OPTIMAL or path_status == cp.FEASIBLE:
-            self.update_feasible_solution()
-            self.fix_path()
 
+            self.fix_path()
             self.model.clear_objective()
             self.model.minimize(sum(self.op_start_vars[choice, len(self.trains[choice]) - 1] for choice in self.choice))
+
             time_status = self.solver.Solve(self.model)
 
             if time_status == cp.OPTIMAL or time_status == cp.FEASIBLE:
                 self.update_feasible_solution()
-                return self.feasible_solution
-        return None
+                return True
+        return False
 
 
     def fix_path(self):
@@ -445,3 +229,164 @@ class TrainSolver:
                         break
 
             self.feasible_solution[train] = train_sol
+
+
+class Heuristic:
+    def __init__(self, instance):
+        self.log = Log(instance.objectives)
+        self.instance = instance
+        self.trains = instance.trains
+        self.resource_appearances, self.train_to_resources = self.count_resource_appearances()
+        self.start_graph = self.create_start_graph()
+        self.blocking_dependencies = self.calculate_blocking_dependencies()
+        self.increment_release_times()
+
+
+    def schedule(self):
+        feasible_solution = [{} for _ in range(len(self.trains))]
+        scc_start = 0
+        for scc in self.blocking_dependencies:
+            scc_resource_evaluation = deepcopy(self.resource_appearances)
+            scheduled_trains = []
+            unscheduled_trains = deepcopy(scc)
+
+            while len(unscheduled_trains):
+                # print(f"{scheduled_trains} : {unscheduled_trains}")
+                to_schedule = random.choices(unscheduled_trains, k=1)
+                solution_found = TrainSolver(self.instance, feasible_solution, scheduled_trains, to_schedule, self.resource_appearances, self.train_to_resources, scc_start).solve()
+
+                if not solution_found:
+                    self.update_resource_appearances(to_schedule, scc_resource_evaluation)
+                    conflicted_trains = self.calculate_conflicted_trains(to_schedule, scheduled_trains, scc, feasible_solution)
+
+                    # Reschedule conflicted trains with punished resources
+                    for train in conflicted_trains:
+                        TrainSolver(self.instance, feasible_solution, [s for s in scheduled_trains if s != train], [train], self.resource_appearances, self.train_to_resources, scc_start).solve()
+
+                    solution_found = TrainSolver(self.instance, feasible_solution, scheduled_trains, to_schedule, self.resource_appearances, self.train_to_resources, scc_start).solve()
+                    if not solution_found:
+                        conflicted_trains = self.calculate_conflicted_trains(to_schedule, scheduled_trains, scc, feasible_solution)
+                        for t in to_schedule:
+                            # print(f"{t} is blocked by {[in_e[0] for in_e in self.start_graph.in_edges(t) if in_e[0] in scc]}")
+                            # print(f"{t} blocks {[in_e[1] for in_e in self.start_graph.out_edges(t) if in_e[1] in scc]}")
+                        conflicted_trains.sort(key=lambda x: feasible_solution[x][len(self.trains[x]) - 1]["start"])
+
+                        for train in conflicted_trains:
+                            scheduled_trains.remove(train)
+                            unscheduled_trains.append(train)
+                            solution_found = TrainSolver(self.instance, feasible_solution, scheduled_trains, to_schedule, self.resource_appearances, self.train_to_resources, scc_start).solve()
+
+                            if solution_found:
+                                break
+
+
+                for train in to_schedule:
+                    unscheduled_trains.remove(train)
+                    scheduled_trains.extend(to_schedule)
+                    scheduled_trains.sort()
+
+            max_end = 0
+            max_rt = 0
+            for train in scc:
+                for op, timings in feasible_solution[train].items():
+                    max_end = max(max_end, timings["end"])
+                    for res in timings["resources"]:
+                        max_rt = max(max_rt, res["release_time"])
+
+            scc_start = max_end + max_rt
+
+        self.log.set_solution(feasible_solution)
+        self.log.heuristic_calculation_time = time.time() - self.log.start
+        return self.log
+
+
+    def calculate_conflicted_trains(self, conflicting_trains, scheduled_trains, scc, feasible_solution):
+        conflicted_trains = set()
+        conflicting_resources = set()
+        for conflicting_train in conflicting_trains:
+            conflicting_resources.update(self.train_to_resources[conflicting_train])
+
+        for train in scc:
+            if train in conflicting_trains or train not in scheduled_trains:
+                continue
+            for op, timings in feasible_solution[train].items():
+                for res in timings["resources"]:
+                    if res["resource"] in conflicting_resources:
+                        conflicted_trains.add(train)
+        return list(conflicted_trains)
+
+
+    def calculate_blocking_dependencies(self):
+        start_graph = self.create_start_graph()
+        condensed_graph = self.create_condensed_graph(start_graph)
+        return [list(condensed_graph.nodes[scc]["members"]) for scc in list(nx.topological_sort(condensed_graph))]
+
+
+    def create_start_graph(self):
+        start_graph = nx.DiGraph()
+        start_graph.add_nodes_from(range(len(self.trains)))
+
+        for t1, blocking_train in enumerate(self.trains):
+            start_resources = [res["resource"] for res in blocking_train[0]["resources"]]
+            for t2, blocked_train in enumerate(self.trains):
+                if t1 == t2:
+                    continue
+                for start_res in start_resources:
+                    if start_res in self.train_to_resources[t2]:
+                        start_graph.add_edge(t1, t2)
+        return start_graph
+
+
+    @staticmethod
+    def create_condensed_graph(start_graph):
+        condensed_graph = nx.DiGraph()
+        sccs = list(nx.strongly_connected_components(start_graph))
+        node_to_scc = {}
+
+        for i, scc in enumerate(sccs):
+            for node in scc:
+                node_to_scc[node] = i
+            condensed_graph.add_node(i, members=scc)
+
+        for u, v in start_graph.edges:
+            scc_u = node_to_scc[u]
+            scc_v = node_to_scc[v]
+            if scc_u != scc_v:
+                condensed_graph.add_edge(scc_u, scc_v)
+
+        return condensed_graph
+
+
+    def count_resource_appearances(self):
+        resource_appearances = {}
+        train_to_resources = {}
+
+        for i, train in enumerate(self.trains):
+            used_resources = set()
+            for j, op in enumerate(train):
+                for res in op["resources"]:
+                    used_resources.add(res["resource"])
+            for res in used_resources:
+                if resource_appearances.get(res) is not None:
+                    resource_appearances[res] += 1
+                else:
+                    resource_appearances[res] = 1
+            train_to_resources[i] = used_resources
+        return resource_appearances, train_to_resources
+
+
+    def update_resource_appearances(self, to_schedule, scc_resource_evaluation):
+        max_counter = max(scc_resource_evaluation.values())
+        used_resources = set()
+        for train in to_schedule:
+            used_resources.update(self.train_to_resources[train])
+        for res in used_resources:
+            scc_resource_evaluation[res] += max_counter
+
+
+    def increment_release_times(self):
+        for train in self.instance.trains:
+            for op in train:
+                for res in op["resources"]:
+                    if res["release_time"] == 0:
+                        res["release_time"] = 1

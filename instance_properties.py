@@ -2,10 +2,14 @@ import networkx as nx
 
 
 def check_properties(instance):
+    '''
     if repeated_resource_usage(instance.trains):
         print("A train used a resource more than once.")
     else:
         print("No train uses any of its resources no more than once independently")
+    '''
+
+    blocking_cascade(instance.trains)
 
 
 def repeated_resource_usage(trains):
@@ -34,3 +38,11 @@ def repeated_resource_usage(trains):
         return True
 
     return False
+
+def blocking_cascade(trains):
+    if len(start_graph.nodes):
+        longest_comp = max([len(comp) for comp in list(nx.strongly_connected_components(start_graph))])
+        num_of_comps = len(list(nx.strongly_connected_components(start_graph)))
+        print(f"{len(start_graph.nodes) / num_of_comps} : {longest_comp}")
+    else:
+        print(f"{0} : {0}")

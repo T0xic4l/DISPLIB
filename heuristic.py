@@ -267,6 +267,7 @@ class Heuristic:
                     if not solution_found:
                         conflicted_trains = self.calculate_conflicted_trains(to_schedule, scheduled_trains, scc, feasible_solution)
                         for t in to_schedule:
+                            continue
                             # print(f"{t} is blocked by {[in_e[0] for in_e in self.start_graph.in_edges(t) if in_e[0] in scc]}")
                             # print(f"{t} blocks {[in_e[1] for in_e in self.start_graph.out_edges(t) if in_e[1] in scc]}")
                         conflicted_trains.sort(key=lambda x: feasible_solution[x][len(self.trains[x]) - 1]["start"])

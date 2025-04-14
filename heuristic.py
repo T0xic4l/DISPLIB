@@ -245,46 +245,48 @@ class Heuristic:
     def schedule(self):
         feasible_solution = [{} for _ in range(len(self.trains))]
         scc_start = 0
+
         for scc in self.blocking_dependencies:
             scc_resource_evaluation = deepcopy(self.resource_appearances)
             scheduled_trains = []
             unscheduled_trains = deepcopy(scc)
+            if len(scc) == 1:
+                print(f"Schedule {scc[0]}")
+                feasible_solution[scc[0]] = self.schedule_single_train(scc[0], scc_start)
+            else:
 
-            while len(unscheduled_trains):
-                # print(f"{scheduled_trains} : {unscheduled_trains}")
-                to_schedule = random.choices(unscheduled_trains, k=1)
-                solution_found = TrainSolver(self.instance, feasible_solution, scheduled_trains, to_schedule, self.resource_appearances, self.train_to_resources, scc_start).solve()
-
-                if not solution_found:
-                    self.update_resource_appearances(to_schedule, scc_resource_evaluation)
-                    conflicted_trains = self.calculate_conflicted_trains(to_schedule, scheduled_trains, scc, feasible_solution)
-
-                    # Reschedule conflicted trains with punished resources
-                    for train in conflicted_trains:
-                        TrainSolver(self.instance, feasible_solution, [s for s in scheduled_trains if s != train], [train], self.resource_appearances, self.train_to_resources, scc_start).solve()
-
+                while len(unscheduled_trains):
+                    print(f"{scheduled_trains} : {unscheduled_trains}")
+                    to_schedule = random.choices(unscheduled_trains, k=1)
                     solution_found = TrainSolver(self.instance, feasible_solution, scheduled_trains, to_schedule, self.resource_appearances, self.train_to_resources, scc_start).solve()
+
                     if not solution_found:
+                        self.update_resource_appearances(to_schedule, scc_resource_evaluation)
                         conflicted_trains = self.calculate_conflicted_trains(to_schedule, scheduled_trains, scc, feasible_solution)
-                        for t in to_schedule:
-                            continue
-                            # print(f"{t} is blocked by {[in_e[0] for in_e in self.start_graph.in_edges(t) if in_e[0] in scc]}")
-                            # print(f"{t} blocks {[in_e[1] for in_e in self.start_graph.out_edges(t) if in_e[1] in scc]}")
-                        conflicted_trains.sort(key=lambda x: feasible_solution[x][len(self.trains[x]) - 1]["start"])
 
                         for train in conflicted_trains:
-                            scheduled_trains.remove(train)
-                            unscheduled_trains.append(train)
-                            solution_found = TrainSolver(self.instance, feasible_solution, scheduled_trains, to_schedule, self.resource_appearances, self.train_to_resources, scc_start).solve()
+                            TrainSolver(self.instance, feasible_solution, [s for s in scheduled_trains if s != train], [train], self.resource_appearances, self.train_to_resources, scc_start).solve()
 
-                            if solution_found:
-                                break
+                        solution_found = TrainSolver(self.instance, feasible_solution, scheduled_trains, to_schedule, self.resource_appearances, self.train_to_resources, scc_start).solve()
+                        if not solution_found:
+                            conflicted_trains = self.calculate_conflicted_trains(to_schedule, scheduled_trains, scc, feasible_solution)
+                            conflicted_trains.sort(key=lambda x: feasible_solution[x][len(self.trains[x]) - 1]["start"])
 
+                            blocking_trains = [in_e[0] for in_e in self.start_graph.in_edges(to_schedule[0])]
+                            print(f"{to_schedule[0]} blocking trains {blocking_trains}")
 
-                for train in to_schedule:
-                    unscheduled_trains.remove(train)
-                    scheduled_trains.extend(to_schedule)
-                    scheduled_trains.sort()
+                            for train in conflicted_trains:
+                                scheduled_trains.remove(train)
+                                unscheduled_trains.append(train)
+                                solution_found = TrainSolver(self.instance, feasible_solution, scheduled_trains, to_schedule, self.resource_appearances, self.train_to_resources, scc_start).solve()
+
+                                if solution_found:
+                                    break
+
+                    for train in to_schedule:
+                        unscheduled_trains.remove(train)
+                        scheduled_trains.extend(to_schedule)
+                        scheduled_trains.sort()
 
             max_end = 0
             max_rt = 0
@@ -377,12 +379,11 @@ class Heuristic:
 
 
     def update_resource_appearances(self, to_schedule, scc_resource_evaluation):
-        max_counter = max(scc_resource_evaluation.values())
         used_resources = set()
         for train in to_schedule:
             used_resources.update(self.train_to_resources[train])
         for res in used_resources:
-            scc_resource_evaluation[res] += max_counter
+            scc_resource_evaluation[res] *= 3
 
 
     def increment_release_times(self):
@@ -391,3 +392,20 @@ class Heuristic:
                 for res in op["resources"]:
                     if res["release_time"] == 0:
                         res["release_time"] = 1
+
+    def schedule_single_train(self, train_id, start):
+        current_time = start
+        train = self.trains[train_id]
+        train_solution = {}
+
+        op = 0
+        train_solution.update({0: {"start": 0, "end": max(train[0]["min_duration"], current_time), "resources": train[op]["resources"]}})
+        current_time = train_solution[0]["end"]
+
+        while op != len(train) - 1:
+            op = train[op]["successors"][0]
+            current_time = max(current_time, train[op]["start_lb"])
+            train_solution.update({op: {"start": current_time, "end": current_time + train[op]["min_duration"], "resources": train[op]["resources"]}})
+            current_time = train_solution[op]["end"]
+
+        return train_solution

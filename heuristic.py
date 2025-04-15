@@ -7,6 +7,8 @@ from collections import defaultdict
 from ortools.sat.python import cp_model as cp
 from logger import Log
 
+import matplotlib.pyplot as plt
+
 
 class TrainSolver:
     def __init__(self, instance, feasible_solution, fix_trains, choice, resource_evaluation, train_resource_usage, start):
@@ -73,7 +75,6 @@ class TrainSolver:
 
     def set_objective(self):
         self.model.minimize(sum(sum(self.resource_evaluation[res] * var for res, var in self.resource_usage_vars[i].items()) for i in self.choice))
-        return
 
 
     def add_path_constraints(self):
@@ -156,10 +157,10 @@ class TrainSolver:
 
 
     def solve(self):
+        self.solver.parameters.num_workers = 8
         path_status = self.solver.Solve(self.model)
 
         if path_status == cp.OPTIMAL or path_status == cp.FEASIBLE:
-
             self.fix_path()
             self.model.clear_objective()
             self.model.minimize(sum(self.op_start_vars[choice, len(self.trains[choice]) - 1] for choice in self.choice))
@@ -241,6 +242,92 @@ class Heuristic:
         self.blocking_dependencies = self.calculate_blocking_dependencies()
         self.increment_release_times()
 
+        self.restricted_trains_to_restricted_resources = dict()
+
+
+    def split_blocking_dependencies(self):
+        for i, scc in enumerate(self.blocking_dependencies):
+            if not len(scc) == 1:
+                sub_graph = nx.DiGraph()
+                for u, v in self.start_graph.edges:
+                    if u in scc and v in scc:
+                        sub_graph.add_edge(u, v)
+
+                pos = nx.circular_layout(sub_graph)
+                plt.figure(figsize=(len(sub_graph.nodes), len(sub_graph.nodes)))
+                nx.draw_networkx_nodes(sub_graph, pos, node_color='lightblue', node_size=350)
+                nx.draw_networkx_labels(sub_graph, pos, font_size=12, font_weight='bold')
+                drawn = set()
+                for u, v in sub_graph.edges():
+                    if (v, u) in sub_graph.edges() and (v, u) not in drawn:
+                        nx.draw_networkx_edges(
+                            sub_graph, pos,
+                            edgelist=[(u, v)],
+                            connectionstyle='arc3,rad=0.2',
+                            arrowstyle='-|>',
+                            arrows=True,
+                            edge_color='red',
+                            arrowsize=10
+                        )
+                        nx.draw_networkx_edges(
+                            sub_graph, pos,
+                            edgelist=[(v, u)],
+                            connectionstyle='arc3,rad=-0.2',
+                            arrowstyle='-|>',
+                            arrows=True,
+                            edge_color='red',
+                            arrowsize=10
+                        )
+                        drawn.add((u, v))
+                        drawn.add((v, u))
+                    elif (u, v) not in drawn:
+                        nx.draw_networkx_edges(
+                            sub_graph, pos,
+                            edgelist=[(u, v)],
+                            connectionstyle='arc3,rad=0.0',
+                            arrowstyle='-|>',
+                            arrows=True,
+                            edge_color='gray',
+                            arrowsize=10
+                        )
+                        drawn.add((u, v))
+                plt.axis('off')
+                plt.title("Saubere Darstellung mit getrennten Pfeilen")
+                plt.tight_layout()
+                plt.savefig(f"{scc}.pdf", format="pdf")
+                plt.show()
+
+
+
+
+                sub_sccs = []
+
+                split = True
+                while split:
+                    split = False
+                    for node in list(sub_graph.nodes):
+                        blocking_trains = [in_edge[0] for in_edge in list(sub_graph.in_edges(node))]
+                        start_resources = [self.trains[train][0]["resources"] for train in blocking_trains]
+
+                        if self.check_resource_avoidance(node, start_resources):
+                            split = True
+                            sub_sccs.append([node])
+                            sub_graph.remove_node(node)
+
+
+
+
+
+
+
+                if split:
+                    new_sccs = nx.strongly_connected_components()
+        return None
+
+
+    def check_resource_avoidance(self, train, resources):
+        pass
+
 
     def schedule(self):
         feasible_solution = [{} for _ in range(len(self.trains))]
@@ -250,38 +337,30 @@ class Heuristic:
             scc_resource_evaluation = deepcopy(self.resource_appearances)
             scheduled_trains = []
             unscheduled_trains = deepcopy(scc)
+
             if len(scc) == 1:
-                print(f"Schedule {scc[0]}")
                 feasible_solution[scc[0]] = self.schedule_single_train(scc[0], scc_start)
             else:
-
                 while len(unscheduled_trains):
                     print(f"{scheduled_trains} : {unscheduled_trains}")
                     to_schedule = random.choices(unscheduled_trains, k=1)
-                    solution_found = TrainSolver(self.instance, feasible_solution, scheduled_trains, to_schedule, self.resource_appearances, self.train_to_resources, scc_start).solve()
 
-                    if not solution_found:
+                    if not TrainSolver(self.instance, feasible_solution, scheduled_trains, to_schedule, scc_resource_evaluation, self.train_to_resources, scc_start).solve():
                         self.update_resource_appearances(to_schedule, scc_resource_evaluation)
+
                         conflicted_trains = self.calculate_conflicted_trains(to_schedule, scheduled_trains, scc, feasible_solution)
+                        random.shuffle(conflicted_trains)
 
                         for train in conflicted_trains:
-                            TrainSolver(self.instance, feasible_solution, [s for s in scheduled_trains if s != train], [train], self.resource_appearances, self.train_to_resources, scc_start).solve()
+                            scheduled_trains.remove(train)
+                            unscheduled_trains.append(train)
 
-                        solution_found = TrainSolver(self.instance, feasible_solution, scheduled_trains, to_schedule, self.resource_appearances, self.train_to_resources, scc_start).solve()
-                        if not solution_found:
-                            conflicted_trains = self.calculate_conflicted_trains(to_schedule, scheduled_trains, scc, feasible_solution)
-                            conflicted_trains.sort(key=lambda x: feasible_solution[x][len(self.trains[x]) - 1]["start"])
+                            if TrainSolver(self.instance, feasible_solution, scheduled_trains, to_schedule, scc_resource_evaluation, self.train_to_resources, scc_start).solve():
+                                break
+                            else:
+                                self.update_resource_appearances(to_schedule, scc_resource_evaluation)
 
-                            blocking_trains = [in_e[0] for in_e in self.start_graph.in_edges(to_schedule[0])]
-                            print(f"{to_schedule[0]} blocking trains {blocking_trains}")
-
-                            for train in conflicted_trains:
-                                scheduled_trains.remove(train)
-                                unscheduled_trains.append(train)
-                                solution_found = TrainSolver(self.instance, feasible_solution, scheduled_trains, to_schedule, self.resource_appearances, self.train_to_resources, scc_start).solve()
-
-                                if solution_found:
-                                    break
+                    self.update_resource_appearances(to_schedule, scc_resource_evaluation, True)
 
                     for train in to_schedule:
                         unscheduled_trains.remove(train)
@@ -378,12 +457,19 @@ class Heuristic:
         return resource_appearances, train_to_resources
 
 
-    def update_resource_appearances(self, to_schedule, scc_resource_evaluation):
-        used_resources = set()
-        for train in to_schedule:
-            used_resources.update(self.train_to_resources[train])
-        for res in used_resources:
-            scc_resource_evaluation[res] *= 3
+    def update_resource_appearances(self, to_schedule, scc_resource_evaluation, decay = False):
+        if decay:
+            for res in scc_resource_evaluation.keys():
+                scc_resource_evaluation[res] = round(scc_resource_evaluation[res] * 0.9, 2)
+        else:
+            used_resources = set()
+            for train in to_schedule:
+                used_resources.update(self.train_to_resources[train])
+
+            for res in used_resources:
+                scc_resource_evaluation[res] = round(scc_resource_evaluation[res] + 1, 2)
+
+        # print(f"{scc_resource_evaluation.items()}")
 
 
     def increment_release_times(self):
@@ -392,6 +478,7 @@ class Heuristic:
                 for res in op["resources"]:
                     if res["release_time"] == 0:
                         res["release_time"] = 1
+
 
     def schedule_single_train(self, train_id, start):
         current_time = start

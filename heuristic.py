@@ -17,7 +17,7 @@ class TrainSolver:
         self.fix_trains = fix_trains
         self.feasible_solution = feasible_solution
         self.trains = instance.trains
-        self.train_graphs = self.create_train_graphs()
+        self.train_graphs = [create_train_graph(train) for train in self.trains]
         self.resource_evaluation = resource_evaluation
         self.train_resource_usage = train_resource_usage
         self.conflicted_resources = set()
@@ -105,8 +105,6 @@ class TrainSolver:
             self.model.add(self.op_end_vars[train, last_op] == self.op_start_vars[train, last_op] + self.trains[train][last_op]["min_duration"])
 
 
-
-
     def add_resource_conflict_constraints(self):
         for res, ops in self.resource_conflicts.items():
             if len(ops) > 1:
@@ -182,18 +180,6 @@ class TrainSolver:
         return
 
 
-    def create_train_graphs(self):
-        train_graphs = []
-        for train in self.trains:
-            graph = nx.DiGraph()
-            graph.add_nodes_from([i for i, _ in enumerate(train)])
-
-            for i, operation in enumerate(train):
-                graph.add_edges_from([(i, v) for v in operation["successors"]])
-            train_graphs.append(graph)
-        return train_graphs
-
-
     def find_release_time(self, train, operation, resource):
         if train in self.choice:
             for op_res in self.trains[train][operation]["resources"]:
@@ -240,93 +226,114 @@ class Heuristic:
         self.resource_appearances, self.train_to_resources = self.count_resource_appearances()
         self.start_graph = self.create_start_graph()
         self.blocking_dependencies = self.calculate_blocking_dependencies()
+        self.split_blocking_dependencies()
         self.increment_release_times()
-
-        self.restricted_trains_to_restricted_resources = dict()
+        self.restricted_trains_to_path = dict()
 
 
     def split_blocking_dependencies(self):
-        for i, scc in enumerate(self.blocking_dependencies):
+        for scc in self.blocking_dependencies:
             if not len(scc) == 1:
-                sub_graph = nx.DiGraph()
-                for u, v in self.start_graph.edges:
-                    if u in scc and v in scc:
-                        sub_graph.add_edge(u, v)
-
-                pos = nx.circular_layout(sub_graph)
-                plt.figure(figsize=(len(sub_graph.nodes), len(sub_graph.nodes)))
-                nx.draw_networkx_nodes(sub_graph, pos, node_color='lightblue', node_size=350)
-                nx.draw_networkx_labels(sub_graph, pos, font_size=12, font_weight='bold')
-                drawn = set()
-                for u, v in sub_graph.edges():
-                    if (v, u) in sub_graph.edges() and (v, u) not in drawn:
-                        nx.draw_networkx_edges(
-                            sub_graph, pos,
-                            edgelist=[(u, v)],
-                            connectionstyle='arc3,rad=0.2',
-                            arrowstyle='-|>',
-                            arrows=True,
-                            edge_color='red',
-                            arrowsize=10
-                        )
-                        nx.draw_networkx_edges(
-                            sub_graph, pos,
-                            edgelist=[(v, u)],
-                            connectionstyle='arc3,rad=-0.2',
-                            arrowstyle='-|>',
-                            arrows=True,
-                            edge_color='red',
-                            arrowsize=10
-                        )
-                        drawn.add((u, v))
-                        drawn.add((v, u))
-                    elif (u, v) not in drawn:
-                        nx.draw_networkx_edges(
-                            sub_graph, pos,
-                            edgelist=[(u, v)],
-                            connectionstyle='arc3,rad=0.0',
-                            arrowstyle='-|>',
-                            arrows=True,
-                            edge_color='gray',
-                            arrowsize=10
-                        )
-                        drawn.add((u, v))
-                plt.axis('off')
-                plt.title("Saubere Darstellung mit getrennten Pfeilen")
-                plt.tight_layout()
-                plt.savefig(f"{scc}.pdf", format="pdf")
-                plt.show()
+                self.split_scc(scc)
 
 
+    def split_scc(self, scc):
+
+        scc_graph = self.create_sub_graph(scc, self.start_graph)
+
+        for node in list(scc_graph.nodes):
+            blocking_trains = [in_edge[0] for in_edge in list(scc_graph.in_edges(node))]
+            start_resources = [self.trains[train][0]["resources"] for train in blocking_trains]
+
+            if self.check_resource_avoidance(node, start_resources):
+                # After removing node, graph might be broken into more than one scc again
+                scc_graph.remove_node(node)
+                condensed_graph = self.create_condensed_graph(scc_graph)
+                blocking_dependency = nx.topological_sort(condensed_graph)
+
+                # Overwrite Scc by sub_sccs
+                scc_index = self.blocking_dependencies.index(scc)
+                self.blocking_dependencies = (
+                        self.blocking_dependencies[:scc_index] +
+                        [node] + [condensed_graph.nodes[scc]["members"] for scc in blocking_dependency] +
+                        self.blocking_dependencies[scc_index:])
+
+                for condensed_node in blocking_dependency:
+                    self.split_scc(condensed_node.nodes[condensed_node]["members"])
 
 
-                sub_sccs = []
-
-                split = True
-                while split:
-                    split = False
-                    for node in list(sub_graph.nodes):
-                        blocking_trains = [in_edge[0] for in_edge in list(sub_graph.in_edges(node))]
-                        start_resources = [self.trains[train][0]["resources"] for train in blocking_trains]
-
-                        if self.check_resource_avoidance(node, start_resources):
-                            split = True
-                            sub_sccs.append([node])
-                            sub_graph.remove_node(node)
+    @staticmethod
+    def create_sub_graph(sub_nodes, graph):
+        sub_graph = nx.DiGraph()
+        for u, v in sub_graph.edges:
+            if u in sub_nodes and v in sub_nodes:
+                graph.add_edge(u, v)
+        return graph
 
 
+    @staticmethod
+    def print_graph_to_file(self, sub_graph):
+        pos = nx.circular_layout(sub_graph)
+        plt.figure(figsize=(len(sub_graph.nodes), len(sub_graph.nodes)))
+        nx.draw_networkx_nodes(sub_graph, pos, node_color='lightblue', node_size=350)
+        nx.draw_networkx_labels(sub_graph, pos, font_size=12, font_weight='bold')
+        drawn = set()
+        for u, v in sub_graph.edges():
+            if (v, u) in sub_graph.edges() and (v, u) not in drawn:
+                nx.draw_networkx_edges(
+                    sub_graph, pos,
+                    edgelist=[(u, v)],
+                    connectionstyle='arc3,rad=0.2',
+                    arrowstyle='-|>',
+                    arrows=True,
+                    edge_color='red',
+                    arrowsize=10
+                )
+                nx.draw_networkx_edges(
+                    sub_graph, pos,
+                    edgelist=[(v, u)],
+                    connectionstyle='arc3,rad=-0.2',
+                    arrowstyle='-|>',
+                    arrows=True,
+                    edge_color='red',
+                    arrowsize=10
+                )
+                drawn.add((u, v))
+                drawn.add((v, u))
+            elif (u, v) not in drawn:
+                nx.draw_networkx_edges(
+                    sub_graph, pos,
+                    edgelist=[(u, v)],
+                    connectionstyle='arc3,rad=0.0',
+                    arrowstyle='-|>',
+                    arrows=True,
+                    edge_color='gray',
+                    arrowsize=10
+                )
+                drawn.add((u, v))
+        plt.axis('off')
+        plt.title("Saubere Darstellung mit getrennten Pfeilen")
+        plt.tight_layout()
+        plt.savefig(f"{sub_graph.nodes}.pdf", format="pdf")
+        plt.show()
 
 
 
+    def check_resource_avoidance(self, train_id, resources):
+        train = self.trains[train_id]
+        train_copy = deepcopy(train)
+        train_graph = create_train_graph(train_copy)
+        for node in train_graph.nodes:
+            for res in train[node]["resources"]:
+                if res["resource"] in resources:
+                    train_graph.remove_node(node)
+                    break
 
+        for path in nx.all_simple_paths(train_graph, source=0, target=len(train)-1):
+            self.restricted_trains_to_path[train_id] = path
+            return True
 
-                if split:
-                    new_sccs = nx.strongly_connected_components()
-        return None
-
-
-    def check_resource_avoidance(self, train, resources):
-        pass
+        return False
 
 
     def schedule(self):
@@ -489,10 +496,25 @@ class Heuristic:
         train_solution.update({0: {"start": 0, "end": max(train[0]["min_duration"], current_time), "resources": train[op]["resources"]}})
         current_time = train_solution[0]["end"]
 
-        while op != len(train) - 1:
-            op = train[op]["successors"][0]
-            current_time = max(current_time, train[op]["start_lb"])
-            train_solution.update({op: {"start": current_time, "end": current_time + train[op]["min_duration"], "resources": train[op]["resources"]}})
-            current_time = train_solution[op]["end"]
+        if train_id in self.restricted_trains_to_path.keys():
+            del self.restricted_trains_to_path[train_id][0]
+            for op in self.restricted_trains_to_path[train_id]:
+                current_time = max(current_time, train[op]["start_lb"])
+                train_solution.update({op: {"start": current_time, "end": current_time + train[op]["min_duration"], "resources": train[op]["resources"]}})
+                current_time = train_solution[op]["end"]
+        else:
+            while op != len(train) - 1:
+                op = train[op]["successors"][0]
+                current_time = max(current_time, train[op]["start_lb"])
+                train_solution.update({op: {"start": current_time, "end": current_time + train[op]["min_duration"], "resources": train[op]["resources"]}})
+                current_time = train_solution[op]["end"]
 
         return train_solution
+
+
+def create_train_graph(train):
+    graph = nx.DiGraph()
+    graph.add_nodes_from([i for i, _ in enumerate(train)])
+    for i, operation in enumerate(train):
+        graph.add_edges_from([(i, v) for v in operation["successors"]])
+    return graph

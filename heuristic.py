@@ -4,10 +4,9 @@ import time
 
 from copy import deepcopy
 from collections import defaultdict
+
 from ortools.sat.python import cp_model as cp
 from logger import Log
-
-import matplotlib.pyplot as plt
 
 
 class TrainSolver:
@@ -27,7 +26,8 @@ class TrainSolver:
         self.model = cp.CpModel()
         self.solver = cp.CpSolver()
 
-        self.resource_conflicts = dict()  # A mapping from a resource to a list of operations using this operation
+        self.resource_conflicts = dict()  # A mapping from a resource to a list of (t, op) using this resource
+        self.new_resource_conflicts = self.create_new_resource_conflicts() # [res][train]["start" / "end"]
         self.op_start_vars = dict()
         self.op_end_vars = dict()
         self.edge_select_vars = list()
@@ -37,37 +37,23 @@ class TrainSolver:
             select_vars = {}
 
             for res in self.train_resource_usage[i]:
-                self.resource_usage_vars[i][res] = self.model.new_bool_var(name=f"Train {i} uses resource {res}")
+                if check_resource_avoidance(self.trains[i], [res], return_path=False):
+                    self.resource_usage_vars[i][res] = self.model.NewBoolVar(name=f"Train {i} uses resource {res}")
 
             for j, op in enumerate(self.trains[i]):
                 self.op_start_vars[i, j] = self.model.NewIntVar(lb=op["start_lb"], ub=op["start_ub"],
                                                                 name=f"Start of Train {i} : Operation {j}")
 
-                self.op_end_vars[i, j] = self.model.NewIntVar(lb=op["start_lb"] + op["min_duration"], ub=2 ** 40,
+                self.op_end_vars[i, j] = self.model.NewIntVar(lb=op["start_lb"] + op["min_duration"], ub=2 ** 20,
                                                               name=f"End of Train {i} : Operation {j}")
-
-                for res in op["resources"]:
-                    if res["resource"] in self.resource_conflicts.keys():
-                        self.resource_conflicts[res["resource"]].append((i, j))
-                    else:
-                        self.resource_conflicts[res["resource"]] = [(i, j)]
 
                 for s in op["successors"]:
                     select_vars[j, s] = self.model.NewBoolVar(name=f"Train {i} : Edge<{j},{s}>")
             self.edge_select_vars.append(select_vars)
 
-        for j in fix_trains:
-            for op in self.feasible_solution[j].keys():
-                for res in self.trains[j][op]["resources"]:
-                    if res["resource"] in self.conflicted_resources:
-                        if res["resource"] in self.resource_conflicts.keys():
-                            self.resource_conflicts[res["resource"]].append((j, op))
-                        else:
-                            self.resource_conflicts[res["resource"]] = [(j, op)]
-
         self.add_path_constraints()
         self.add_timing_constraints()
-        self.add_resource_conflict_constraints()
+        self.add_new_resource_conflict_constraints()
         self.add_resource_usage_constraints()
 
         self.set_objective()
@@ -105,56 +91,61 @@ class TrainSolver:
             self.model.add(self.op_end_vars[train, last_op] == self.op_start_vars[train, last_op] + self.trains[train][last_op]["min_duration"])
 
 
-    def add_resource_conflict_constraints(self):
-        for res, ops in self.resource_conflicts.items():
-            if len(ops) > 1:
-                interval_vars = {}
+    def add_new_resource_conflict_constraints(self):
+        for res, trains in self.new_resource_conflicts.items():
+            if len(trains.keys()) == 1:
+                continue
+            else:
+                interval_vars = []
 
-                for train, op in ops:
-                    if train in self.choice:
-                        op_chosen = self.model.NewBoolVar(name=f"Train {train} : Operation {op} is chosen")
-                        if op == 0 or op == len(self.train_graphs[train].nodes) - 1:
-                            self.model.add(op_chosen == 1)
-                        else:
-                            for i, f_train in enumerate(self.choice):
-                                if train == f_train:
-                                    self.model.add(sum(self.edge_select_vars[i][in_edge] for in_edge in self.train_graphs[train].in_edges(op)) == op_chosen)
+                for train, timings in trains.items():
+                    if train in self.fix_trains:
+                        if len(timings["start"]) > 1:
+                            print("Error, more than 1 start of fix train for a res")
 
-                        rt = self.find_release_time(train, op, res)
-                        size = self.model.NewIntVar(lb=0, ub=2 ** 40, name=f"Placeholder var")
-                        end = self.model.NewIntVar(lb=0, ub=2 ** 40, name=f"Placeholder var")
-                        self.model.add(end == self.op_end_vars[train, op] + rt)
+                        start = self.feasible_solution[train][timings["start"][0]]["start"]
 
-                        interval_vars[train, op] = self.model.NewOptionalIntervalVar(start=self.op_start_vars[train, op],
-                                                                                        end=end,
-                                                                                        size=size,
-                                                                                        is_present=op_chosen,
-                                                                                        name=f"Optional interval for Train {train} : Operation {op}")
-                    elif train in self.fix_trains:
-                        rt = 0
-                        for f_res in self.feasible_solution[train][op]["resources"]:
+                        if len(timings["end"]) > 1:
+                            print("Error, more than 1 end of fix train for a res")
+
+                        rt = None
+                        for f_res in self.feasible_solution[train][timings["end"][0]]["resources"]:
                             if f_res["resource"] == res:
                                 rt = f_res["release_time"]
 
-                        interval_vars[train, op] = self.model.NewIntervalVar(start=self.feasible_solution[train][op]["start"],
-                                                                                end=self.feasible_solution[train][op]["end"] + rt,
-                                                                                size=self.feasible_solution[train][op]["end"] + rt - self.feasible_solution[train][op]["start"],
-                                                                                name=f"Fix interval for Train {train} : Operation {op}")
+                        size = self.feasible_solution[train][timings["end"][0]]["end"] + rt - start
+                        interval_vars.append(self.model.NewFixedSizeIntervalVar(start=start, size=size, name=f"Fixed Interval for resource {res} for Train {train}"))
+                    else:
+                        start_var = self.model.NewIntVar(lb=0, ub=2 ** 20, name=f"Start of res {res} for train {train}.")
+                        for start in timings["start"]:
+                            self.model.add(start_var <= self.op_start_vars[train, start])
 
-                for (t1, op1), (t2, op2) in itertools.combinations(ops, 2):
-                    if (t1 in self.choice or t2 in self.choice) and (t1 != t2):
-                        self.model.add_no_overlap([interval_vars[t1, op1], interval_vars[t2, op2]])
+                        end_var = self.model.NewIntVar(lb=0, ub=2 ** 20, name=f"End of res {res} for train {train}.")
+                        for end in timings["end"]:
+                            rt = self.find_release_time(train, end, res)
+                            self.model.add(end_var >= self.op_end_vars[train, end] + rt)
+
+                        res_avoidance_possible = res in self.resource_usage_vars[train].keys()
+                        size = self.model.NewIntVar(lb=0, ub=2 ** 20, name=f"Placeholder var")
+
+                        if res_avoidance_possible:
+                            interval_vars.append(self.model.NewOptionalIntervalVar(start=start_var, end=end_var, is_present=self.resource_usage_vars[train][res], size=size, name=f"Optional interval for resource {res} for Train {train}"))
+                        else:
+                            interval_vars.append(self.model.NewIntervalVar(start=start_var, end=end_var, size=size, name=f"Interval for resource {res} for Train {train}"))
+
+                self.model.AddNoOverlap(interval_vars)
 
 
     def add_resource_usage_constraints(self):
         for i, train in enumerate(self.choice):
-            for j, op in enumerate(self.trains[train]):
-                out_edges = self.train_graphs[train].out_edges(j)
-                for res in op["resources"]:
-                    self.model.add(sum(self.edge_select_vars[i][out_e] for out_e in out_edges) == 0).OnlyEnforceIf(self.resource_usage_vars[train][res["resource"]].Not())
+            for res, res_usage_var in self.resource_usage_vars[train].items():
+                res_starts = self.new_resource_conflicts[res][train]["start"]
+                in_edges = [in_e for s in res_starts for in_e in self.train_graphs[train].in_edges(s)]
+                self.model.add(sum(self.edge_select_vars[i][in_e] for in_e in in_edges) == 0).OnlyEnforceIf(res_usage_var.Not())
 
 
     def solve(self):
+        self.solver.parameters.log_search_progress = True
         self.solver.parameters.num_workers = 8
         path_status = self.solver.Solve(self.model)
 
@@ -178,6 +169,55 @@ class TrainSolver:
                     if round(self.solver.value(self.edge_select_vars[i][j, succ])):
                         self.model.add(self.edge_select_vars[i][j, succ] == 1)
         return
+
+
+    def create_new_resource_conflicts(self):
+        new_resource_conflicts = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+        # get start- and end operations for variable trains, there might be more than one
+        for i in self.choice:
+            res_to_ops = defaultdict()
+            for j, op in enumerate(self.trains[i]):
+                for res in op["resources"]:
+                    if res_to_ops.get(res["resource"]) is not None:
+                        res_to_ops[res["resource"]].append(j)
+                    else:
+                        res_to_ops[res["resource"]] = [j]
+
+            for res in self.train_resource_usage[i]:
+                start_ops = deepcopy(res_to_ops[res])
+                end_ops = deepcopy(res_to_ops[res])
+
+                for op in res_to_ops[res]:
+
+                    if all(any(succ_res["resource"] == res for succ_res in self.trains[i][succ]["resources"]) for succ in self.trains[i][op]["successors"]):
+                        end_ops.remove(op)
+
+                    if op != 0:
+                        predecessors = [pred[0] for pred in self.train_graphs[i].in_edges(op)]
+                        if all(any(pred_res["resource"] == res for pred_res in self.trains[i][pred]["resources"]) for pred in predecessors):
+                            start_ops.remove(op)
+
+                new_resource_conflicts[res][i]["start"] = start_ops
+                new_resource_conflicts[res][i]["end"] = end_ops
+
+        # get start- and end operation for fix trains - only one
+        for i in self.fix_trains:
+            pred = -1
+            track_resources = list()
+            for op, timings in self.feasible_solution[i].items():
+                op_res = [res["resource"] for res in timings["resources"]]
+                for res in op_res:
+                    if res not in track_resources:
+                        track_resources.append(res)
+                        new_resource_conflicts[res][i]["start"].append(op)
+                if pred != -1:
+                    track_copy = deepcopy(track_resources)
+                    for res in track_copy:
+                        if res not in op_res:
+                            track_resources.remove(res)
+                            new_resource_conflicts[res][i]["end"].append(pred)
+                pred = op
+        return new_resource_conflicts
 
 
     def find_release_time(self, train, operation, resource):
@@ -226,9 +266,9 @@ class Heuristic:
         self.resource_appearances, self.train_to_resources = self.count_resource_appearances()
         self.start_graph = self.create_start_graph()
         self.blocking_dependencies = self.calculate_blocking_dependencies()
+        self.restricted_trains_to_path = dict()
         self.split_blocking_dependencies()
         self.increment_release_times()
-        self.restricted_trains_to_path = dict()
 
 
     def split_blocking_dependencies(self):
@@ -238,102 +278,38 @@ class Heuristic:
 
 
     def split_scc(self, scc):
-
         scc_graph = self.create_sub_graph(scc, self.start_graph)
 
         for node in list(scc_graph.nodes):
             blocking_trains = [in_edge[0] for in_edge in list(scc_graph.in_edges(node))]
-            start_resources = [self.trains[train][0]["resources"] for train in blocking_trains]
-
-            if self.check_resource_avoidance(node, start_resources):
+            start_resources = [res["resource"] for train in blocking_trains for res in self.trains[train][0]["resources"]]
+            path = check_resource_avoidance(self.trains[node], start_resources, return_path=True)
+            if path:
                 # After removing node, graph might be broken into more than one scc again
+                self.restricted_trains_to_path[node] = path
                 scc_graph.remove_node(node)
                 condensed_graph = self.create_condensed_graph(scc_graph)
-                blocking_dependency = nx.topological_sort(condensed_graph)
+                blocking_dependency = list(nx.topological_sort(condensed_graph))
 
                 # Overwrite Scc by sub_sccs
                 scc_index = self.blocking_dependencies.index(scc)
                 self.blocking_dependencies = (
                         self.blocking_dependencies[:scc_index] +
-                        [node] + [condensed_graph.nodes[scc]["members"] for scc in blocking_dependency] +
-                        self.blocking_dependencies[scc_index:])
+                        [[node]] + [list(condensed_graph.nodes[scc]["members"]) for scc in blocking_dependency] +
+                        self.blocking_dependencies[scc_index + 1:])
 
                 for condensed_node in blocking_dependency:
-                    self.split_scc(condensed_node.nodes[condensed_node]["members"])
+                    self.split_scc(list(condensed_graph.nodes[condensed_node]["members"]))
+                break
 
 
     @staticmethod
     def create_sub_graph(sub_nodes, graph):
         sub_graph = nx.DiGraph()
-        for u, v in sub_graph.edges:
+        for u, v in graph.edges:
             if u in sub_nodes and v in sub_nodes:
-                graph.add_edge(u, v)
-        return graph
-
-
-    @staticmethod
-    def print_graph_to_file(self, sub_graph):
-        pos = nx.circular_layout(sub_graph)
-        plt.figure(figsize=(len(sub_graph.nodes), len(sub_graph.nodes)))
-        nx.draw_networkx_nodes(sub_graph, pos, node_color='lightblue', node_size=350)
-        nx.draw_networkx_labels(sub_graph, pos, font_size=12, font_weight='bold')
-        drawn = set()
-        for u, v in sub_graph.edges():
-            if (v, u) in sub_graph.edges() and (v, u) not in drawn:
-                nx.draw_networkx_edges(
-                    sub_graph, pos,
-                    edgelist=[(u, v)],
-                    connectionstyle='arc3,rad=0.2',
-                    arrowstyle='-|>',
-                    arrows=True,
-                    edge_color='red',
-                    arrowsize=10
-                )
-                nx.draw_networkx_edges(
-                    sub_graph, pos,
-                    edgelist=[(v, u)],
-                    connectionstyle='arc3,rad=-0.2',
-                    arrowstyle='-|>',
-                    arrows=True,
-                    edge_color='red',
-                    arrowsize=10
-                )
-                drawn.add((u, v))
-                drawn.add((v, u))
-            elif (u, v) not in drawn:
-                nx.draw_networkx_edges(
-                    sub_graph, pos,
-                    edgelist=[(u, v)],
-                    connectionstyle='arc3,rad=0.0',
-                    arrowstyle='-|>',
-                    arrows=True,
-                    edge_color='gray',
-                    arrowsize=10
-                )
-                drawn.add((u, v))
-        plt.axis('off')
-        plt.title("Saubere Darstellung mit getrennten Pfeilen")
-        plt.tight_layout()
-        plt.savefig(f"{sub_graph.nodes}.pdf", format="pdf")
-        plt.show()
-
-
-
-    def check_resource_avoidance(self, train_id, resources):
-        train = self.trains[train_id]
-        train_copy = deepcopy(train)
-        train_graph = create_train_graph(train_copy)
-        for node in train_graph.nodes:
-            for res in train[node]["resources"]:
-                if res["resource"] in resources:
-                    train_graph.remove_node(node)
-                    break
-
-        for path in nx.all_simple_paths(train_graph, source=0, target=len(train)-1):
-            self.restricted_trains_to_path[train_id] = path
-            return True
-
-        return False
+                sub_graph.add_edge(u, v)
+        return sub_graph
 
 
     def schedule(self):
@@ -350,7 +326,7 @@ class Heuristic:
             else:
                 while len(unscheduled_trains):
                     print(f"{scheduled_trains} : {unscheduled_trains}")
-                    to_schedule = random.choices(unscheduled_trains, k=1)
+                    to_schedule = random.sample(unscheduled_trains, k=min(2, len(unscheduled_trains)))
 
                     if not TrainSolver(self.instance, feasible_solution, scheduled_trains, to_schedule, scc_resource_evaluation, self.train_to_resources, scc_start).solve():
                         self.update_resource_appearances(to_schedule, scc_resource_evaluation)
@@ -371,7 +347,7 @@ class Heuristic:
 
                     for train in to_schedule:
                         unscheduled_trains.remove(train)
-                        scheduled_trains.extend(to_schedule)
+                        scheduled_trains.append(train)
                         scheduled_trains.sort()
 
             max_end = 0
@@ -518,3 +494,25 @@ def create_train_graph(train):
     for i, operation in enumerate(train):
         graph.add_edges_from([(i, v) for v in operation["successors"]])
     return graph
+
+
+def check_resource_avoidance(train, resources, return_path = False):
+    start_res = [res["resource"] for res in train[0]["resources"]]
+    if set(resources).intersection(start_res):
+        return None
+
+    train_copy = deepcopy(train)
+    train_graph = create_train_graph(train_copy)
+    for i, op in enumerate(train):
+        for res in train[i]["resources"]:
+            if res["resource"] in resources:
+                train_graph.remove_node(i)
+                break
+
+    if not return_path:
+        return nx.has_path(train_graph, source=0, target=len(train) - 1)
+    else:
+        try:
+            return nx.shortest_path(train_graph, source=0, target=len(train) - 1)
+        except nx.NetworkXNoPath:
+            return None

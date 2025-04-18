@@ -1,12 +1,24 @@
 import argparse, json, os
+import logging
 import time
 from copy import deepcopy
 
 from data import Instance
 from heuristic import Heuristic
-from logger import Log
+from logger import TimeLogger
 from instance_properties import check_properties
 from lns_coordinator import LnsCoordinator
+
+log_pfad = os.path.join("Logs", "meine_logs.log")
+os.makedirs(os.path.dirname(log_pfad), exist_ok=True)
+file_handler = logging.FileHandler('log.txt', mode='w')
+console_handler = logging.StreamHandler()
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(levelname)s - %(message)s',
+    handlers=[file_handler, console_handler]
+)
 
 def parse_instance(instance):
     # Fill in the defined default values for easy access
@@ -45,21 +57,40 @@ def main():
     instance = parse_instance(instance)
 
     if args.checkproperties:
-        check_properties(instance)
+        check_properties(instance, args.instance)
     else:
         solve_instance(instance)
 
 
 def solve_instance(instance):
-    log = Heuristic(deepcopy(instance)).schedule()
+    resource_appearances, train_to_resources = count_resource_appearances(instance.trains)
+    log = Heuristic(deepcopy(instance), resource_appearances, train_to_resources).schedule()
 
     if args.debug:
         log.write_final_solution_to_file("HeuristicSolutions", f"heuristic_sol2_{args.instance}")
         log.write_log_to_file("Logs", f"log_{args.instance}")
         print(f"Found for {args.instance}. Elapsed time: {time.time() - log.start}")
     else:
-        LnsCoordinator(instance, log, 600 - (time.time() - log.start)).solve()
+        LnsCoordinator(instance, log, resource_appearances, train_to_resources, 600 - (time.time() - log.start)).solve()
         log.write_final_solution_to_file("Solutions", f"10min_sol2_{args.instance}")
+
+
+def count_resource_appearances(trains):
+    resource_appearances = {}
+    train_to_resources = {}
+
+    for i, train in enumerate(trains):
+        used_resources = set()
+        for j, op in enumerate(train):
+            for res in op["resources"]:
+                used_resources.add(res["resource"])
+        for res in used_resources:
+            if resource_appearances.get(res) is not None:
+                resource_appearances[res] += 1
+            else:
+                resource_appearances[res] = 1
+        train_to_resources[i] = used_resources
+    return resource_appearances, train_to_resources
 
 
 if __name__ == "__main__":

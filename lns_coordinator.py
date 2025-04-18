@@ -3,12 +3,15 @@ import random
 
 from LNS_displib_solver import LnsDisplibSolver
 from time import time
+from copy import deepcopy
 
 class LnsCoordinator:
-    def __init__(self, instance, log, time_limit):
+    def __init__(self, instance, log, resource_appearances, train_to_resources, time_limit):
         self.instance = instance
         self.feasible_sol = log.get_solution()
         self.objective = calculate_objective_value(self.instance.objectives, self.feasible_sol)
+        self.resource_appearances = resource_appearances # Not used ATM
+        self.train_to_resources = train_to_resources
 
         self.start_time = time()
         self.has_to_be_finished_at = self.start_time + time_limit
@@ -43,7 +46,7 @@ class LnsCoordinator:
             for train in choice:
                 self.train_usage[train] += 1
 
-            new_feasible_sol = LnsDisplibSolver(self.instance, self.feasible_sol, choice, self.calculate_remaining_time() - 2).solve()
+            new_feasible_sol = LnsDisplibSolver(self.instance, self.feasible_sol, choice, deepcopy(self.train_to_resources),self.calculate_remaining_time() - 2, 2).solve()
             new_objective_value = calculate_objective_value(self.instance.objectives, new_feasible_sol)
 
             if new_objective_value == 0:

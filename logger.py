@@ -1,6 +1,7 @@
 import json
 import os
 import time
+import logging
 
 from event_sorter import EventSorter
 from copy import deepcopy
@@ -27,7 +28,9 @@ class Log:
 
 
     def write_final_solution_to_file(self, path, filename):
+        logging.info("Starting EventSorter now.")
         event_sorter = EventSorter(self.__feasible_sol)
+        logging.info("Done sorting Events")
         with open(os.path.join(path, filename), 'w') as file:
             file.write(json.dumps({"objective_value": self.calculate_objective_value(), "events": event_sorter.events}))
 
@@ -51,3 +54,17 @@ class Log:
                     "increment"] * (1 if self.__feasible_sol[train][op]["start"] >= obj["threshold"] else 0))
 
         return value
+
+
+class TimeLogger:
+    def __init__(self, label):
+        self.start = None
+        self.label = label
+
+    def __enter__(self):
+        self.start = time.perf_counter()
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        logging.info(f"{self.label} - {time.perf_counter() - self.start} seconds")
+
+

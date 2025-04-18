@@ -1,62 +1,72 @@
 import itertools, random
+import logging
+import json
+
 import networkx as nx
 import time
 
 from copy import deepcopy
 from collections import defaultdict
+from itertools import count
 
 from ortools.sat.python import cp_model as cp
-from logger import Log
+from logger import Log, TimeLogger
 
 
 class TrainSolver:
-    def __init__(self, instance, feasible_solution, fix_trains, choice, resource_evaluation, train_resource_usage, start):
-        self.start = start
-        self.choice = choice
-        self.fix_trains = fix_trains
-        self.feasible_solution = feasible_solution
-        self.trains = instance.trains
-        self.train_graphs = [create_train_graph(train) for train in self.trains]
-        self.resource_evaluation = resource_evaluation
-        self.train_resource_usage = train_resource_usage
-        self.conflicted_resources = set()
-        for train in self.choice:
-            self.conflicted_resources.update(self.train_resource_usage[train])
+    def __init__(self, instance, feasible_solution, fix_trains, choice, resource_evaluation, semi_fixed_trains, train_resource_usage, start_time=0):
+        with TimeLogger("Model Setup"):
+            self.start_time = start_time
+            self.choice = choice
+            self.fix_trains = fix_trains
+            self.semi_fixed_trains = semi_fixed_trains
+            self.feasible_solution = feasible_solution
+            self.trains = instance.trains
+            self.train_graphs = [create_train_graph(train) for train in self.trains]
+            self.resource_evaluation = resource_evaluation
+            self.train_resource_usage = train_resource_usage
+            self.conflicted_resources = set()
+            for train in self.choice:
+                self.conflicted_resources.update(self.train_resource_usage[train])
 
-        self.model = cp.CpModel()
-        self.solver = cp.CpSolver()
+            self.model = cp.CpModel()
+            self.solver = cp.CpSolver()
 
-        self.resource_conflicts = dict()  # A mapping from a resource to a list of (t, op) using this resource
-        self.new_resource_conflicts = self.create_new_resource_conflicts() # [res][train]["start" / "end"]
-        self.op_start_vars = dict()
-        self.op_end_vars = dict()
-        self.edge_select_vars = list()
-        self.resource_usage_vars = defaultdict(dict)
+            self.resource_conflicts = dict()  # A mapping from a resource to a list of (t, op) using this resource
+            self.new_resource_conflicts = self.create_new_resource_conflicts() # [res][train]["start" / "end"]
+            self.op_start_vars = dict()
+            self.op_end_vars = dict()
+            self.edge_select_vars = list()
+            self.resource_usage_vars = defaultdict(dict)
 
-        for i in self.choice:
-            select_vars = {}
+            for i in self.choice:
+                select_vars = {}
 
-            for res in self.train_resource_usage[i]:
-                if check_resource_avoidance(self.trains[i], [res], return_path=False):
-                    self.resource_usage_vars[i][res] = self.model.NewBoolVar(name=f"Train {i} uses resource {res}")
+                for res in self.train_resource_usage[i]:
+                    if check_resource_avoidance(self.trains[i], [res], return_path=False):
+                        self.resource_usage_vars[i][res] = self.model.NewBoolVar(name="")
 
-            for j, op in enumerate(self.trains[i]):
-                self.op_start_vars[i, j] = self.model.NewIntVar(lb=op["start_lb"], ub=op["start_ub"],
-                                                                name=f"Start of Train {i} : Operation {j}")
+                for j, op in enumerate(self.trains[i]):
+                    self.op_start_vars[i, j] = self.model.NewIntVar(lb=op["start_lb"], ub=op["start_ub"], name="")
 
-                self.op_end_vars[i, j] = self.model.NewIntVar(lb=op["start_lb"] + op["min_duration"], ub=2 ** 20,
-                                                              name=f"End of Train {i} : Operation {j}")
+                    self.op_end_vars[i, j] = self.model.NewIntVar(lb=op["start_lb"] + op["min_duration"], ub=2 ** 20, name="")
 
-                for s in op["successors"]:
-                    select_vars[j, s] = self.model.NewBoolVar(name=f"Train {i} : Edge<{j},{s}>")
-            self.edge_select_vars.append(select_vars)
+                    for s in op["successors"]:
+                        select_vars[j, s] = self.model.NewBoolVar(name="")
 
-        self.add_path_constraints()
-        self.add_timing_constraints()
-        self.add_new_resource_conflict_constraints()
-        self.add_resource_usage_constraints()
+                    self.edge_select_vars.append(select_vars)
 
-        self.set_objective()
+            for i in self.semi_fixed_trains:
+                for op, timings in self.feasible_solution[i].items():
+                    self.op_start_vars[i, op] = self.model.NewIntVar(lb=max(self.trains[i][op]["start_lb"], self.start_time), ub=self.trains[i][op]["start_ub"], name="")
+                    self.op_end_vars[i, op] = self.model.NewIntVar(lb=self.trains[i][op]["start_ub"] + self.trains[i][op]["min_duration"], ub=2 ** 20, name="")
+
+            self.add_path_constraints()
+            self.add_timing_constraints()
+            self.add_new_resource_conflict_constraints()
+            self.add_resource_usage_constraints()
+
+            self.set_objective()
 
 
     def set_objective(self):
@@ -86,9 +96,19 @@ class TrainSolver:
                 for out_edge in self.train_graphs[train].out_edges(op):
                     self.model.add(self.op_end_vars[train, op] == self.op_start_vars[train, out_edge[1]]).OnlyEnforceIf(self.edge_select_vars[i][out_edge])
 
-            self.model.add(self.op_end_vars[train, 0] >= self.start)
+            self.model.add(self.op_end_vars[train, 0] >= self.start_time)
             last_op = len(self.trains[train]) - 1
             self.model.add(self.op_end_vars[train, last_op] == self.op_start_vars[train, last_op] + self.trains[train][last_op]["min_duration"])
+
+        for train in self.semi_fixed_trains:
+            ops = list(self.feasible_solution[train].keys())
+            for op, timings in self.feasible_solution[train].items():
+                succ_op = ops[i + 1] if i + 1 < len(ops) else None
+                if succ_op is None:
+                    self.model.add(self.op_end_vars[train, op] == self.op_start_vars[train, op] + self.trains[train][op]["min_duration"])
+                else:
+                    self.model.add(self.op_start_vars[train, op] + self.trains[train][op]["min_duration"] <= self.op_start_vars[train, succ_op])
+                    self.model.add(self.op_end_vars[train, op] == self.op_start_vars[train, succ_op])
 
 
     def add_new_resource_conflict_constraints(self):
@@ -100,22 +120,14 @@ class TrainSolver:
 
                 for train, timings in trains.items():
                     if train in self.fix_trains:
-                        if len(timings["start"]) > 1:
-                            print("Error, more than 1 start of fix train for a res")
+                        assert len(timings["start"]) <= 1 and len(timings["end"]) <= 1, f"More than one start-/end-operation for resource {res}, fixed train {train}"
+                        rt = next((f_res["release_time"] for f_res in self.feasible_solution[train][timings["end"][0]]["resources"] if f_res["resource"] == res), None)
+                        assert rt is not None, f"Releasetime for resource {res}, fixed train {train} not found"
 
                         start = self.feasible_solution[train][timings["start"][0]]["start"]
-
-                        if len(timings["end"]) > 1:
-                            print("Error, more than 1 end of fix train for a res")
-
-                        rt = None
-                        for f_res in self.feasible_solution[train][timings["end"][0]]["resources"]:
-                            if f_res["resource"] == res:
-                                rt = f_res["release_time"]
-
                         size = self.feasible_solution[train][timings["end"][0]]["end"] + rt - start
                         interval_vars.append(self.model.NewFixedSizeIntervalVar(start=start, size=size, name=f"Fixed Interval for resource {res} for Train {train}"))
-                    else:
+                    elif train in self.choice:
                         start_var = self.model.NewIntVar(lb=0, ub=2 ** 20, name=f"Start of res {res} for train {train}.")
                         for start in timings["start"]:
                             self.model.add(start_var <= self.op_start_vars[train, start])
@@ -126,13 +138,21 @@ class TrainSolver:
                             self.model.add(end_var >= self.op_end_vars[train, end] + rt)
 
                         res_avoidance_possible = res in self.resource_usage_vars[train].keys()
-                        size = self.model.NewIntVar(lb=0, ub=2 ** 20, name=f"Placeholder var")
+                        size = self.model.NewIntVar(lb=0, ub=2 ** 20, name="")
 
                         if res_avoidance_possible:
-                            interval_vars.append(self.model.NewOptionalIntervalVar(start=start_var, end=end_var, is_present=self.resource_usage_vars[train][res], size=size, name=f"Optional interval for resource {res} for Train {train}"))
+                            interval_vars.append(self.model.NewOptionalIntervalVar(start=start_var, end=end_var, is_present=self.resource_usage_vars[train][res], size=size, name=""))
                         else:
                             interval_vars.append(self.model.NewIntervalVar(start=start_var, end=end_var, size=size, name=f"Interval for resource {res} for Train {train}"))
+                    elif train in self.semi_fixed_trains:
+                        assert len(timings["start"]) <= 1 and len(timings["end"]) <= 1, f"More than one start-/end-operation for resource {res}, semi-fixed train {train}"
+                        size = self.model.new_int_var(lb=0, ub= 2**20, name="")
+                        end = self.model.new_int_var(lb=0, ub = 2**20, name="")
+                        rt = next((f_res["release_time"] for f_res in self.feasible_solution[train][timings["end"][0]]["resources"] if f_res["resource"] == res), None)
+                        assert rt is not None, f"Releasetime for resource {res}, fixed train {train} not found"
+                        self.model.add(end == rt + self.op_end_vars[train, timings["end"][0]])
 
+                        interval_vars.append(self.model.NewIntervalVar(start=self.op_start_vars[train, timings["start"][0]], end=end, size=size, name=""))
                 self.model.AddNoOverlap(interval_vars)
 
 
@@ -145,21 +165,22 @@ class TrainSolver:
 
 
     def solve(self):
-        self.solver.parameters.log_search_progress = True
-        self.solver.parameters.num_workers = 8
-        path_status = self.solver.Solve(self.model)
+        with TimeLogger("Solving"):
+            # self.solver.parameters.log_search_progress = True
+            self.solver.parameters.num_workers = 8
+            path_status = self.solver.Solve(self.model)
 
-        if path_status == cp.OPTIMAL or path_status == cp.FEASIBLE:
-            self.fix_path()
-            self.model.clear_objective()
-            self.model.minimize(sum(self.op_start_vars[choice, len(self.trains[choice]) - 1] for choice in self.choice))
+            if path_status == cp.OPTIMAL or path_status == cp.FEASIBLE:
+                self.fix_path()
+                self.model.clear_objective()
+                self.model.minimize(sum(self.op_start_vars[choice, len(self.trains[choice]) - 1] for choice in self.choice))
 
-            time_status = self.solver.Solve(self.model)
+                time_status = self.solver.Solve(self.model)
 
-            if time_status == cp.OPTIMAL or time_status == cp.FEASIBLE:
-                self.update_feasible_solution()
-                return True
-        return False
+                if time_status == cp.OPTIMAL or time_status == cp.FEASIBLE:
+                    self.update_feasible_solution()
+                    return True
+            return False
 
 
     def fix_path(self):
@@ -172,6 +193,7 @@ class TrainSolver:
 
 
     def create_new_resource_conflicts(self):
+        # dict[res][train]["start"/"end"]
         new_resource_conflicts = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
         # get start- and end operations for variable trains, there might be more than one
         for i in self.choice:
@@ -201,13 +223,13 @@ class TrainSolver:
                 new_resource_conflicts[res][i]["end"] = end_ops
 
         # get start- and end operation for fix trains - only one
-        for i in self.fix_trains:
+        for i in self.fix_trains + self.semi_fixed_trains:
             pred = -1
             track_resources = list()
             for op, timings in self.feasible_solution[i].items():
                 op_res = [res["resource"] for res in timings["resources"]]
                 for res in op_res:
-                    if res not in track_resources:
+                    if res not in track_resources and new_resource_conflicts.get(res) is not None:
                         track_resources.append(res)
                         new_resource_conflicts[res][i]["start"].append(op)
                 if pred != -1:
@@ -257,13 +279,20 @@ class TrainSolver:
 
             self.feasible_solution[train] = train_sol
 
+        for train in self.semi_fixed_trains:
+            for op, timings in self.feasible_solution[train].items():
+                timings["start"] = round(self.solver.value(self.op_start_vars[train, op]))
+                timings["end"] = round(self.solver.value(self.op_end_vars[train, op]))
+            logging.info(f"Feasible Sol for train {train}\n: {json.dumps(self.feasible_solution[train])}\n")
+
 
 class Heuristic:
-    def __init__(self, instance):
+    def __init__(self, instance, resource_appearances, train_to_resources):
         self.log = Log(instance.objectives)
         self.instance = instance
         self.trains = instance.trains
-        self.resource_appearances, self.train_to_resources = self.count_resource_appearances()
+        self.resource_appearances = resource_appearances
+        self.train_to_resources = train_to_resources
         self.start_graph = self.create_start_graph()
         self.blocking_dependencies = self.calculate_blocking_dependencies()
         self.restricted_trains_to_path = dict()
@@ -315,8 +344,10 @@ class Heuristic:
     def schedule(self):
         feasible_solution = [{} for _ in range(len(self.trains))]
         scc_start = 0
+        logging.info("Initial resource weights: %s", ", ".join(str(v) for v in self.resource_appearances.values()))
 
         for scc in self.blocking_dependencies:
+            logging.info(f"Start of scheduling scc: {scc}")
             scc_resource_evaluation = deepcopy(self.resource_appearances)
             scheduled_trains = []
             unscheduled_trains = deepcopy(scc)
@@ -324,31 +355,37 @@ class Heuristic:
             if len(scc) == 1:
                 feasible_solution[scc[0]] = self.schedule_single_train(scc[0], scc_start)
             else:
+                counter = count(start=1, step=1)
                 while len(unscheduled_trains):
-                    print(f"{scheduled_trains} : {unscheduled_trains}")
-                    to_schedule = random.sample(unscheduled_trains, k=min(2, len(unscheduled_trains)))
+                    i = next(counter)
+                    to_schedule = random.sample(unscheduled_trains, k=min(1, len(unscheduled_trains)))
+                    conflicted_trains = self.calculate_conflicted_trains(to_schedule, scheduled_trains, scc, feasible_solution)
+                    semi_fixed_trains = deepcopy(conflicted_trains)
+                    fixed_trains = [train for train in scheduled_trains if train not in conflicted_trains]
 
-                    if not TrainSolver(self.instance, feasible_solution, scheduled_trains, to_schedule, scc_resource_evaluation, self.train_to_resources, scc_start).solve():
+                    logging.info(f"Iteration {i} - Schedule train(s): {to_schedule} - {len(scheduled_trains)} scheduled trains - {len(unscheduled_trains)} unscheduled trains")
+                    if not TrainSolver(self.instance, feasible_solution, fixed_trains, to_schedule, scc_resource_evaluation, semi_fixed_trains, self.train_to_resources, scc_start).solve():
                         self.update_resource_appearances(to_schedule, scc_resource_evaluation)
 
-                        conflicted_trains = self.calculate_conflicted_trains(to_schedule, scheduled_trains, scc, feasible_solution)
                         random.shuffle(conflicted_trains)
 
                         for train in conflicted_trains:
                             scheduled_trains.remove(train)
                             unscheduled_trains.append(train)
+                            semi_fixed_trains.remove(train)
 
-                            if TrainSolver(self.instance, feasible_solution, scheduled_trains, to_schedule, scc_resource_evaluation, self.train_to_resources, scc_start).solve():
+                            if TrainSolver(self.instance, feasible_solution, fixed_trains, to_schedule, scc_resource_evaluation, semi_fixed_trains, self.train_to_resources, scc_start).solve():
                                 break
                             else:
                                 self.update_resource_appearances(to_schedule, scc_resource_evaluation)
 
                     self.update_resource_appearances(to_schedule, scc_resource_evaluation, True)
 
+                    logging.info("Updated resource evaluation: %s", ", ".join(str(v) for v in scc_resource_evaluation.values()))
+
                     for train in to_schedule:
                         unscheduled_trains.remove(train)
                         scheduled_trains.append(train)
-                        scheduled_trains.sort()
 
             max_end = 0
             max_rt = 0
@@ -359,6 +396,7 @@ class Heuristic:
                         max_rt = max(max_rt, res["release_time"])
 
             scc_start = max_end + max_rt
+            logging.info(f"Scheduling {scc} done")
 
         self.log.set_solution(feasible_solution)
         self.log.heuristic_calculation_time = time.time() - self.log.start
@@ -422,37 +460,18 @@ class Heuristic:
         return condensed_graph
 
 
-    def count_resource_appearances(self):
-        resource_appearances = {}
-        train_to_resources = {}
-
-        for i, train in enumerate(self.trains):
-            used_resources = set()
-            for j, op in enumerate(train):
-                for res in op["resources"]:
-                    used_resources.add(res["resource"])
-            for res in used_resources:
-                if resource_appearances.get(res) is not None:
-                    resource_appearances[res] += 1
-                else:
-                    resource_appearances[res] = 1
-            train_to_resources[i] = used_resources
-        return resource_appearances, train_to_resources
-
-
     def update_resource_appearances(self, to_schedule, scc_resource_evaluation, decay = False):
         if decay:
             for res in scc_resource_evaluation.keys():
-                scc_resource_evaluation[res] = round(scc_resource_evaluation[res] * 0.9, 2)
+                scc_resource_evaluation[res] = max(round(scc_resource_evaluation[res] * 0.9, 2), 1)
         else:
             used_resources = set()
             for train in to_schedule:
                 used_resources.update(self.train_to_resources[train])
 
             for res in used_resources:
-                scc_resource_evaluation[res] = round(scc_resource_evaluation[res] + 1, 2)
-
-        # print(f"{scc_resource_evaluation.items()}")
+                # TODO: Exponentiell mit Minimum
+                scc_resource_evaluation[res] = min(round(scc_resource_evaluation[res] * 2, 3), max(self.resource_appearances.values()) * len(self.resource_appearances.keys()))
 
 
     def increment_release_times(self):

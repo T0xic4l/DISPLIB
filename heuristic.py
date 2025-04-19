@@ -58,8 +58,8 @@ class TrainSolver:
 
             for i in self.semi_fixed_trains:
                 for op, timings in self.feasible_solution[i].items():
-                    self.op_start_vars[i, op] = self.model.NewIntVar(lb=max(self.trains[i][op]["start_lb"], self.start_time), ub=self.trains[i][op]["start_ub"], name="")
-                    self.op_end_vars[i, op] = self.model.NewIntVar(lb=self.trains[i][op]["start_ub"] + self.trains[i][op]["min_duration"], ub=2 ** 20, name="")
+                    self.op_start_vars[i, op] = self.model.NewIntVar(lb=self.trains[i][op]["start_lb"], ub=self.trains[i][op]["start_ub"], name="")
+                    self.op_end_vars[i, op] = self.model.NewIntVar(lb=self.trains[i][op]["start_lb"] + self.trains[i][op]["min_duration"], ub=2 ** 20, name="")
 
             self.add_path_constraints()
             self.add_timing_constraints()
@@ -102,13 +102,15 @@ class TrainSolver:
 
         for train in self.semi_fixed_trains:
             ops = list(self.feasible_solution[train].keys())
-            for op, timings in self.feasible_solution[train].items():
+
+            for i, (op, timings) in enumerate(self.feasible_solution[train].items()):
                 succ_op = ops[i + 1] if i + 1 < len(ops) else None
                 if succ_op is None:
                     self.model.add(self.op_end_vars[train, op] == self.op_start_vars[train, op] + self.trains[train][op]["min_duration"])
                 else:
                     self.model.add(self.op_start_vars[train, op] + self.trains[train][op]["min_duration"] <= self.op_start_vars[train, succ_op])
                     self.model.add(self.op_end_vars[train, op] == self.op_start_vars[train, succ_op])
+            self.model.add(self.op_end_vars[train, 0] >= self.start_time)
 
 
     def add_new_resource_conflict_constraints(self):
@@ -126,13 +128,13 @@ class TrainSolver:
 
                         start = self.feasible_solution[train][timings["start"][0]]["start"]
                         size = self.feasible_solution[train][timings["end"][0]]["end"] + rt - start
-                        interval_vars.append(self.model.NewFixedSizeIntervalVar(start=start, size=size, name=f"Fixed Interval for resource {res} for Train {train}"))
+                        interval_vars.append(self.model.NewFixedSizeIntervalVar(start=start, size=size, name=""))
                     elif train in self.choice:
-                        start_var = self.model.NewIntVar(lb=0, ub=2 ** 20, name=f"Start of res {res} for train {train}.")
+                        start_var = self.model.NewIntVar(lb=0, ub=2 ** 20, name="")
                         for start in timings["start"]:
                             self.model.add(start_var <= self.op_start_vars[train, start])
 
-                        end_var = self.model.NewIntVar(lb=0, ub=2 ** 20, name=f"End of res {res} for train {train}.")
+                        end_var = self.model.NewIntVar(lb=0, ub=2 ** 20, name="")
                         for end in timings["end"]:
                             rt = self.find_release_time(train, end, res)
                             self.model.add(end_var >= self.op_end_vars[train, end] + rt)
@@ -143,13 +145,13 @@ class TrainSolver:
                         if res_avoidance_possible:
                             interval_vars.append(self.model.NewOptionalIntervalVar(start=start_var, end=end_var, is_present=self.resource_usage_vars[train][res], size=size, name=""))
                         else:
-                            interval_vars.append(self.model.NewIntervalVar(start=start_var, end=end_var, size=size, name=f"Interval for resource {res} for Train {train}"))
+                            interval_vars.append(self.model.NewIntervalVar(start=start_var, end=end_var, size=size, name=""))
                     elif train in self.semi_fixed_trains:
                         assert len(timings["start"]) <= 1 and len(timings["end"]) <= 1, f"More than one start-/end-operation for resource {res}, semi-fixed train {train}"
-                        size = self.model.new_int_var(lb=0, ub= 2**20, name="")
-                        end = self.model.new_int_var(lb=0, ub = 2**20, name="")
+                        size = self.model.new_int_var(lb=0, ub= 2 ** 20, name="")
+                        end = self.model.new_int_var(lb=0, ub= 2 ** 20, name="")
                         rt = next((f_res["release_time"] for f_res in self.feasible_solution[train][timings["end"][0]]["resources"] if f_res["resource"] == res), None)
-                        assert rt is not None, f"Releasetime for resource {res}, fixed train {train} not found"
+                        assert rt is not None, f"Releasetime for resource {res}, semi-fixed train {train} not found"
                         self.model.add(end == rt + self.op_end_vars[train, timings["end"][0]])
 
                         interval_vars.append(self.model.NewIntervalVar(start=self.op_start_vars[train, timings["start"][0]], end=end, size=size, name=""))
@@ -171,7 +173,6 @@ class TrainSolver:
             path_status = self.solver.Solve(self.model)
 
             if path_status == cp.OPTIMAL or path_status == cp.FEASIBLE:
-                self.fix_path()
                 self.model.clear_objective()
                 self.model.minimize(sum(self.op_start_vars[choice, len(self.trains[choice]) - 1] for choice in self.choice))
 

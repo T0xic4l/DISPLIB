@@ -9,16 +9,13 @@ from logger import TimeLogger
 from instance_properties import check_properties
 from lns_coordinator import LnsCoordinator
 
-log_pfad = os.path.join("Logs", "meine_logs.log")
-os.makedirs(os.path.dirname(log_pfad), exist_ok=True)
+
+path = os.path.join("Logs", "meine_logs.log")
+os.makedirs(os.path.dirname(path), exist_ok=True)
 file_handler = logging.FileHandler('log.txt', mode='w')
 console_handler = logging.StreamHandler()
+logging.basicConfig(level=logging.INFO, format='%(levelname)s - %(message)s', handlers=[file_handler, console_handler])
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(levelname)s - %(message)s',
-    handlers=[file_handler, console_handler]
-)
 
 def parse_instance(instance):
     # Fill in the defined default values for easy access
@@ -63,15 +60,16 @@ def main():
 
 
 def solve_instance(instance):
-    resource_appearances, train_to_resources = count_resource_appearances(instance.trains)
-    log = Heuristic(deepcopy(instance), resource_appearances, train_to_resources).schedule()
+    res_eval, train_to_res = count_resource_appearances(instance.trains)
+    log = Heuristic(deepcopy(instance), res_eval, train_to_res).schedule()
 
     if args.debug:
-        log.write_final_solution_to_file("HeuristicSolutions", f"heuristic_sol2_{args.instance}")
+        log.write_final_solution_to_file("HeuristicSolutions", f"hsol_{args.instance}")
         log.write_log_to_file("Logs", f"log_{args.instance}")
         print(f"Found for {args.instance}. Elapsed time: {time.time() - log.start}")
     else:
-        LnsCoordinator(instance, log, resource_appearances, train_to_resources, 600 - (time.time() - log.start)).solve()
+        # TODO: Rework from here
+        LnsCoordinator(instance, log, res_eval, train_to_res, 600 - (time.time() - log.start)).solve()
         log.write_final_solution_to_file("Solutions", f"10min_sol2_{args.instance}")
 
 

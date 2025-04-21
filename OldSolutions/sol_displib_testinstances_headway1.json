@@ -1,1 +1,0 @@
-{"objective_value": 34, "events": [{"time": 0, "train": 0, "operation": 0}, {"time": 0, "train": 1, "operation": 0}, {"time": 0, "train": 1, "operation": 1}, {"time": 5, "train": 1, "operation": 2}, {"time": 10, "train": 1, "operation": 3}, {"time": 14, "train": 0, "operation": 1}, {"time": 19, "train": 0, "operation": 2}, {"time": 24, "train": 0, "operation": 3}]}

@@ -1,1 +1,0 @@
-{"trains":[[{"start_ub":0,"min_duration":5,"resources":[{"resource":"r0"}],"successors":[1]},{"min_duration":5,"successors":[]}],[{"start_ub":0,"min_duration":5,"resources":[{"resource":"r0"}],"successors":[1]},{"min_duration":5,"successors":[]}]],"objective":[]}

@@ -12,7 +12,8 @@ def check_properties(instance, instance_name):
         print("No train uses any of its resources no more than once independently")
     '''
 
-    analyze_solution_and_instance(instance, instance_name)
+    # analyze_solution_and_instance(instance, instance_name)
+    resource_duplicates_per_operation(instance, instance_name)
 
 def repeated_resource_usage(trains):
     graph = nx.DiGraph()
@@ -85,10 +86,15 @@ def analyze_solution_and_instance(instance, instance_name):
     return
 
 
-def blocking_cascade(trains):
-    if len(start_graph.nodes):
-        longest_comp = max([len(comp) for comp in list(nx.strongly_connected_components(start_graph))])
-        num_of_comps = len(list(nx.strongly_connected_components(start_graph)))
-        print(f"{len(start_graph.nodes) / num_of_comps} : {longest_comp}")
-    else:
-        print(f"{0} : {0}")
+def resource_duplicates_per_operation(instance, instance_name):
+    B = False
+    for i, train in enumerate(instance.trains):
+        for j, op in enumerate(train):
+            used_resources = [res["resource"] for res in op["resources"]]
+
+            if len(used_resources) != len(set(used_resources)):
+                B = True
+                print(f"Train: {i} - Operation: {j}")
+
+    if not B:
+        print(f"No duplicates found for {instance_name}")

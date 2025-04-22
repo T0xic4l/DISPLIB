@@ -19,26 +19,31 @@ logging.basicConfig(level=logging.INFO, format='%(levelname)s - %(message)s', ha
 
 def parse_instance(instance):
     # Fill in the defined default values for easy access
-    for train in instance["trains"]:
-        for operation in train:
+    for i, train in enumerate(instance["trains"].copy()):
+        for j, operation in enumerate(train):
             if "start_lb" not in operation:
-                operation["start_lb"] = 0
+                instance["trains"][i][j]["start_lb"] = 0
             if "start_ub" not in operation:
-                operation["start_ub"] = 2 ** 40
+                instance["trains"][i][j]["start_ub"] = 2 ** 40
             if "resources" not in operation:
-                operation["resources"] = []
+                instance["trains"][i][j]["resources"] = []
             else:
-                for res_dict in operation["resources"]:
-                    if "release_time" not in res_dict:
-                        res_dict["release_time"] = 0
+                used_resources = set()
+                for r, res in enumerate(operation["resources"]):
+                    if res["resource"] not in used_resources:
+                        used_resources.add(res["resource"])
+                        if "release_time" not in res:
+                            instance["trains"][i][j]["resources"][r]["release_time"] = 0
+                    else:
+                        instance["trains"][i][j]["resources"].remove(res)
 
-    for objective in instance["objective"]:
+    for k, objective in enumerate(instance["objective"]):
         if "threshold" not in objective:
-            objective["threshold"] = 0
+            instance["objective"][k]["threshold"] = 0
         if "increment" not in objective:
-            objective["increment"] = 0
+            instance["objective"][k]["increment"] = 0
         if "coeff" not in objective:
-            objective["coeff"] = 0
+            instance["objective"][k]["coeff"] = 0
 
     return Instance(instance["trains"], instance["objective"])
 

@@ -1,7 +1,5 @@
 import random
 import logging
-import json
-
 import networkx as nx
 import time
 
@@ -395,7 +393,8 @@ class Heuristic:
                         unscheduled_trains.remove(train)
                         scheduled_trains.append(train)
 
-            max_end = max_rt = 0
+            max_end = 0
+            max_rt = 0
             for train in scc:
                 for op, timings in feasible_solution[train].items():
                     max_end = max(max_end, timings["end"])

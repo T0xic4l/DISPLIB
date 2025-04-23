@@ -17,23 +17,26 @@ logging.basicConfig(level=logging.INFO, format='%(levelname)s - %(message)s', ha
 
 def parse_instance(instance):
     # Fill in the defined default values for easy access
-    for i, train in enumerate(instance["trains"].copy()):
-        for j, operation in enumerate(train):
-            if "start_lb" not in operation:
-                instance["trains"][i][j]["start_lb"] = 0
-            if "start_ub" not in operation:
-                instance["trains"][i][j]["start_ub"] = 2 ** 40
-            if "resources" not in operation:
-                instance["trains"][i][j]["resources"] = []
+    for train in instance["trains"]:
+        for op in train:
+            if "start_lb" not in op:
+                op["start_lb"] = 0
+            if "start_ub" not in op:
+                op["start_ub"] = 2 ** 40
+            if "resources" not in op:
+                op["resources"] = []
             else:
-                used_resources = set()
-                for r, res in enumerate(operation["resources"]):
-                    if res["resource"] not in used_resources:
-                        used_resources.add(res["resource"])
-                        if "release_time" not in res:
-                            instance["trains"][i][j]["resources"][r]["release_time"] = 1
-                    else:
-                        instance["trains"][i][j]["resources"].remove(res)
+                op_res = set([res["resource"] for res in op["resources"]])
+                resources = []
+                for res in op_res:
+                    for f_res in op["resources"]:
+                        if f_res["resource"] == res:
+                            if "release_time" not in f_res:
+                                resources.append({"resource": res, "release_time": 1})
+                            else:
+                                resources.append({"resource": res, "release_time": f_res["release_time"]})
+                            break
+                op["resources"] = resources
 
     for k, objective in enumerate(instance["objective"]):
         if "threshold" not in objective:

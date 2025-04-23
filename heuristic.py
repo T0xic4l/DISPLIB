@@ -373,12 +373,15 @@ class Heuristic:
                     if not TrainSolver(self.instance, feasible_solution, fixed_trains, to_schedule, scc_resource_evaluation, semi_fixed_trains, self.train_to_res, scc_start).solve():
                         self.update_resource_appearances(to_schedule, scc_resource_evaluation)
 
-                        random.shuffle(semi_fixed_trains)
+                        random.shuffle(conflicting_trains)
 
-                        for train in semi_fixed_trains:
+                        for train in conflicting_trains:
+                            if train in semi_fixed_trains:
+                                semi_fixed_trains.remove(train)
+                            else:
+                                fixed_trains.remove(train)
                             scheduled_trains.remove(train)
                             unscheduled_trains.append(train)
-                            semi_fixed_trains.remove(train)
 
                             if TrainSolver(self.instance, feasible_solution, fixed_trains, to_schedule, scc_resource_evaluation, semi_fixed_trains, self.train_to_res, scc_start).solve():
                                 break

@@ -28,9 +28,9 @@ class Log:
 
 
     def write_final_solution_to_file(self, path, filename):
-        logging.info("Starting EventSorter now.")
+        logging.debug("Starting EventSorter now.")
         event_sorter = EventSorter(self.__feasible_sol)
-        logging.info("Done sorting Events")
+        logging.debug("Done sorting Events")
         with open(os.path.join(path, filename), 'w') as file:
             file.write(json.dumps({"objective_value": self.calculate_objective_value(), "events": event_sorter.events}))
 
@@ -65,6 +65,6 @@ class TimeLogger:
         self.start = time.perf_counter()
 
     def __exit__(self, exc_type, exc_value, traceback):
-        logging.info(f"{self.label} - {round(time.perf_counter() - self.start, 2)} seconds")
+        logging.debug(f"{self.label} - {round(time.perf_counter() - self.start, 2)} seconds")
 
 

@@ -13,7 +13,8 @@ def check_properties(instance, instance_name):
     '''
 
     # analyze_solution_and_instance(instance, instance_name)
-    resource_duplicates_per_operation(instance, instance_name)
+    # resource_duplicates_per_operation(instance, instance_name)
+    check_for_zero_release_times(instance, instance_name)
 
 def repeated_resource_usage(trains):
     graph = nx.DiGraph()
@@ -98,3 +99,13 @@ def resource_duplicates_per_operation(instance, instance_name):
 
     if not B:
         print(f"No duplicates found for {instance_name}")
+
+
+def check_for_zero_release_times(instance, instance_name):
+    for i, train in enumerate(instance.trains):
+        for j, op in enumerate(train):
+            for res in op["resources"]:
+                if res["release_time"] == 0:
+                    print(f"Train: {i} - Operation: {j}")
+                    return
+    print(f"No zero-release-times found for {instance_name}")

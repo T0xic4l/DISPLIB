@@ -65,6 +65,6 @@ class TimeLogger:
         self.start = time.perf_counter()
 
     def __exit__(self, exc_type, exc_value, traceback):
-        logging.info(f"{self.label} - {time.perf_counter() - self.start} seconds")
+        logging.info(f"{self.label} - {round(time.perf_counter() - self.start, 2)} seconds")
 
 

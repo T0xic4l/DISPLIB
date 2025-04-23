@@ -41,7 +41,7 @@ class LnsCoordinator:
                 self.train_usage[train] += 1
 
             now = time()
-            new_feasible_sol = LnsDisplibSolver(self.instance, self.feasible_sol, choice, deepcopy(self.train_to_resources),self.calculate_remaining_time() - 2, 2).solve()
+            new_feasible_sol = LnsDisplibSolver(self.instance, self.feasible_sol, choice, deepcopy(self.train_to_resources), self.calculate_remaining_time() - 2, 2).solve()
             if time() - now < 25:
                 size = min(size + 1, len(self.instance.trains))
             else:

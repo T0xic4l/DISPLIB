@@ -30,7 +30,7 @@ class TrainSolver:
             self.resource_conflicts = self.calculate_resource_conflicts() # [res][train]["start" / "end"]
             self.op_start_vars = dict()
             self.op_end_vars = dict()
-            self.edge_select_vars = list()
+            self.edge_select_vars = defaultdict(dict)
             self.resource_usage_vars = defaultdict(dict)
 
             self.create_variables()
@@ -43,15 +43,22 @@ class TrainSolver:
 
     def solve(self):
         with TimeLogger("Solving"):
-            # self.solver.parameters.log_search_progress = True
+            self.solver.parameters.log_search_progress = False
             self.solver.parameters.num_workers = 8
 
-            self.set_time_objective()
-            time_status = self.solver.Solve(self.model)
+            self.set_path_objective()
+            path_status = self.solver.Solve(self.model)
 
-            if time_status == cp.OPTIMAL or time_status == cp.FEASIBLE:
-                self.update_feasible_solution()
-                return True
+            if path_status == cp.OPTIMAL or path_status == cp.FEASIBLE:
+                self.fix_path()
+                self.model.clear_objective()
+                self.set_time_objective()
+
+                time_status = self.solver.Solve(self.model)
+
+                if time_status == cp.OPTIMAL or time_status == cp.FEASIBLE:
+                    self.update_feasible_solution()
+                    return True
             return False
 
 
@@ -67,53 +74,44 @@ class TrainSolver:
 
     def create_variables(self):
         for i in self.choice:
-            select_vars = {}
-
             for res in self.train_resource_usage[i]:
                 if check_resource_avoidance(self.trains[i], [res], return_path=False):
                     self.resource_usage_vars[i][res] = self.model.NewBoolVar(name="")
 
             for j, op in enumerate(self.trains[i]):
                 self.op_start_vars[i, j] = self.model.NewIntVar(lb=op["start_lb"], ub=op["start_ub"], name="")
-
-                self.op_end_vars[i, j] = self.model.NewIntVar(lb=op["start_lb"] + op["min_duration"], ub=2 ** 40,
-                                                              name="")
+                self.op_end_vars[i, j] = self.model.NewIntVar(lb=op["start_lb"] + op["min_duration"], ub=2 ** 40, name="")
 
                 for s in op["successors"]:
-                    select_vars[j, s] = self.model.NewBoolVar(name="")
-
-                self.edge_select_vars.append(select_vars)
+                    self.edge_select_vars[i][j, s] = self.model.NewBoolVar(name="")
 
         for i in self.semi_fixed_trains:
             for op, timings in self.feasible_solution[i].items():
-                self.op_start_vars[i, op] = self.model.NewIntVar(lb=self.trains[i][op]["start_lb"],
-                                                                 ub=self.trains[i][op]["start_ub"], name="")
-                self.op_end_vars[i, op] = self.model.NewIntVar(
-                    lb=self.trains[i][op]["start_lb"] + self.trains[i][op]["min_duration"], ub=2 ** 40, name="")
+                self.op_start_vars[i, op] = self.model.NewIntVar(lb=self.trains[i][op]["start_lb"], ub=self.trains[i][op]["start_ub"], name="")
+                self.op_end_vars[i, op] = self.model.NewIntVar(lb=self.trains[i][op]["start_lb"] + self.trains[i][op]["min_duration"], ub=2 ** 40, name="")
 
 
     def add_path_constraints(self):
-        for i, train in enumerate(self.choice):
+        for train in self.choice:
             last_op = len(self.train_graphs[train].nodes) - 1
 
-            self.model.add(sum(self.edge_select_vars[i][out_edge] for out_edge in self.train_graphs[train].out_edges(0)) == 1)
-            self.model.add(sum(self.edge_select_vars[i][in_edge] for in_edge in self.train_graphs[train].in_edges(last_op)) == 1)
+            self.model.add(sum(self.edge_select_vars[train][out_edge] for out_edge in self.train_graphs[train].out_edges(0)) == 1)
+            self.model.add(sum(self.edge_select_vars[train][in_edge] for in_edge in self.train_graphs[train].in_edges(last_op)) == 1)
 
             for j in range(1, last_op):
                 in_edges = self.train_graphs[train].in_edges(j)
                 out_edges = self.train_graphs[train].out_edges(j)
-                self.model.add(sum(self.edge_select_vars[i][in_edge] for in_edge in in_edges) ==
-                               sum(self.edge_select_vars[i][out_edge] for out_edge in out_edges))
+                self.model.add(sum(self.edge_select_vars[train][in_edge] for in_edge in in_edges) == sum(self.edge_select_vars[train][out_edge] for out_edge in out_edges))
 
 
     def add_timing_constraints(self):
-        for i, train in enumerate(self.choice):
+        for train in self.choice:
             for op in range(len(self.train_graphs[train].nodes)):
                 for in_edge in self.train_graphs[train].in_edges(op):
-                    self.model.add(self.op_start_vars[train, in_edge[0]] + self.trains[train][in_edge[0]]["min_duration"] <= self.op_start_vars[train, op]).OnlyEnforceIf(self.edge_select_vars[i][in_edge])
+                    self.model.add(self.op_start_vars[train, in_edge[0]] + self.trains[train][in_edge[0]]["min_duration"] <= self.op_start_vars[train, op]).OnlyEnforceIf(self.edge_select_vars[train][in_edge])
 
                 for out_edge in self.train_graphs[train].out_edges(op):
-                    self.model.add(self.op_end_vars[train, op] == self.op_start_vars[train, out_edge[1]]).OnlyEnforceIf(self.edge_select_vars[i][out_edge])
+                    self.model.add(self.op_end_vars[train, op] == self.op_start_vars[train, out_edge[1]]).OnlyEnforceIf(self.edge_select_vars[train][out_edge])
 
             self.model.add(self.op_end_vars[train, 0] >= self.start_time)
             last_op = len(self.trains[train]) - 1
@@ -151,13 +149,16 @@ class TrainSolver:
                     elif train in self.choice:
                         start_var = self.model.NewIntVar(lb=0, ub=2 ** 40, name="")
                         for start in timings["start"]:
-                            self.model.add(start_var <= self.op_start_vars[train, start])
+                            start_selected = self.model.NewBoolVar(name="")
+                            self.model.add(sum(self.edge_select_vars[train][out_e] for out_e in self.train_graphs[train].out_edges(start)) == start_selected)
+                            self.model.add(start_var <= self.op_start_vars[train, start]).OnlyEnforceIf(start_selected)
 
                         end_var = self.model.NewIntVar(lb=0, ub=2 ** 40, name="")
                         for end in timings["end"]:
                             rt = self.find_release_time(train, end, res)
-                            self.model.add(end_var >= self.op_end_vars[train, end] + rt)
-
+                            end_selected = self.model.NewBoolVar(name="")
+                            self.model.add(sum(self.edge_select_vars[train][out_e] for out_e in self.train_graphs[train].out_edges(end)) == end_selected)
+                            self.model.add(end_var >= self.op_end_vars[train, end] + rt).OnlyEnforceIf(end_selected)
                         res_avoidance_possible = res in self.resource_usage_vars[train].keys()
                         size = self.model.NewIntVar(lb=0, ub=2 ** 40, name="")
 
@@ -178,20 +179,19 @@ class TrainSolver:
 
 
     def add_resource_usage_constraints(self):
-        for i, train in enumerate(self.choice):
+        for train in self.choice:
             for res, res_usage_var in self.resource_usage_vars[train].items():
                 res_starts = self.resource_conflicts[res][train]["start"]
                 in_edges = [in_e for s in res_starts for in_e in self.train_graphs[train].in_edges(s)]
-                self.model.add(sum(self.edge_select_vars[i][in_e] for in_e in in_edges) == 0).OnlyEnforceIf(res_usage_var.Not())
+                self.model.add(sum(self.edge_select_vars[train][in_e] for in_e in in_edges) == 0).OnlyEnforceIf(res_usage_var.Not())
 
 
     def fix_path(self):
-        for i, train in enumerate(self.choice):
+        for train in self.choice:
             for j, op in enumerate(self.trains[train]):
                 for succ in op["successors"]:
-                    if round(self.solver.value(self.edge_select_vars[i][j, succ])):
-                        self.model.add(self.edge_select_vars[i][j, succ] == 1)
-        return
+                    if round(self.solver.value(self.edge_select_vars[train][j, succ])):
+                        self.model.add(self.edge_select_vars[train][j, succ] == 1)
 
 
     def calculate_resource_conflicts(self):
@@ -264,7 +264,7 @@ class TrainSolver:
 
 
     def update_feasible_solution(self):
-        for i, train in enumerate(self.choice):
+        for train in self.choice:
             train_sol = {}
             v = 0
 
@@ -276,7 +276,7 @@ class TrainSolver:
 
             while v != len(self.train_graphs[train].nodes) - 1:
                 for succ in self.trains[train][v]["successors"]:
-                    if round(self.solver.value(self.edge_select_vars[i][(v, succ)])) == 1:
+                    if round(self.solver.value(self.edge_select_vars[train][(v, succ)])) == 1:
                         v = succ
 
                         resource_list = []
@@ -344,7 +344,7 @@ class Heuristic:
 
 
     def schedule(self):
-        logging.info("Initial resource weights: %s", ", ".join(str(v) for v in self.res_eval.values()))
+        logging.debug("Initial resource weights: %s", ", ".join(str(v) for v in self.res_eval.values()))
 
         feasible_solution = [{} for _ in range(len(self.trains))]
         scc_start = 0
@@ -366,7 +366,7 @@ class Heuristic:
 
                     to_schedule = random.sample(unscheduled_trains, k=min(1, len(unscheduled_trains)))
                     conflicting_trains = self.calculate_conflicted_trains(to_schedule, scheduled_trains, scc, feasible_solution)
-                    semi_fixed_trains = random.sample(conflicting_trains, min(3, len(conflicting_trains)))
+                    semi_fixed_trains = random.sample(conflicting_trains, min(4, len(conflicting_trains)))
                     fixed_trains = [train for train in scheduled_trains if train not in semi_fixed_trains]
 
                     logging.info(f"Iteration {i} - to schedule: {to_schedule} --- scheduled: {scheduled_trains} --- unscheduled: {unscheduled_trains}")
@@ -390,7 +390,7 @@ class Heuristic:
 
                     self.update_resource_appearances(to_schedule, scc_resource_evaluation, True)
 
-                    logging.info("Updated resource evaluation: %s", ", ".join(str(v) for v in scc_resource_evaluation.values()))
+                    logging.debug("Updated resource evaluation: %s", ", ".join(str(v) for v in scc_resource_evaluation.values()))
 
                     for train in to_schedule:
                         unscheduled_trains.remove(train)
@@ -405,7 +405,7 @@ class Heuristic:
                         max_rt = max(max_rt, res["release_time"])
 
             scc_start = max_end + max_rt
-            logging.info(f"Scheduling {scc} done")
+            logging.info(f"Scheduling {scc} done \n")
 
         self.log.set_solution(feasible_solution)
         self.log.heuristic_calculation_time = time.time() - self.log.start
@@ -537,8 +537,7 @@ def check_resource_avoidance(train, resources, return_path = False):
     if set(resources).intersection(start_res):
         return None
 
-    train_copy = deepcopy(train)
-    train_graph = create_train_graph(train_copy)
+    train_graph = create_train_graph(train)
     for i, op in enumerate(train):
         for res in train[i]["resources"]:
             if res["resource"] in resources:

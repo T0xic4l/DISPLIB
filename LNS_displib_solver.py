@@ -18,7 +18,7 @@ from logger import TimeLogger
 
 class LnsDisplibSolver:
     def __init__(self, instance : Instance, feasible_solution : list, choice : list, train_to_resources, time_limit, res_version):
-        logging.info(f"Variable Trains: {choice}")
+        logging.debug(f"Variable Trains: {choice}")
         self.time_limit = time_limit
         self.current_time = time()
         self.deadlock_constraints_added = True
@@ -52,30 +52,23 @@ class LnsDisplibSolver:
                 self.resource_conflicts = defaultdict(lambda : defaultdict(lambda :defaultdict(list)))
                 self.resource_usage_vars = defaultdict(dict)
                 self.create_vars_v2()
-            print(self.model.validate())
 
         #self.deadlock_graph = self.create_deadlock_graph_v2()
 
         with TimeLogger("Constraints"):
             self.add_threshold_constraints()
-            print(self.model.validate())
             self.add_path_constraints()
-            print(self.model.validate())
             self.add_timing_constraints()
-            print(self.model.validate())
             if res_version == 1:
                 self.add_resource_constraints()
-                print(self.model.validate())
                 #self.add_deadlock_constraints_v1()
             elif res_version == 2:
                 self.add_new_resource_constraints()
-                print(self.model.validate())
+                self.add_resource_usage_constraints()
                 #self.add_deadlock_constraints_v2()
             self.add_solution_hint()
-            print(self.model.validate())
 
         self.set_objective()
-        print(self.model.validate())
 
 
     def solve(self):
@@ -86,7 +79,7 @@ class LnsDisplibSolver:
 
         if status == cp.OPTIMAL or status == cp.FEASIBLE:
             self.update_feasible_solution()
-            return self.old_solution
+            return self.feasible_sol
         elif status == cp.INFEASIBLE:
             print("Model is infeasible")
             return self.old_solution
@@ -130,12 +123,9 @@ class LnsDisplibSolver:
                 res_to_ops = defaultdict(list)
                 for j, op in enumerate(self.trains[i]):
                     self.op_start_vars[i, j] = self.model.NewIntVar(lb=op["start_lb"], ub=op["start_ub"], name="")
-
-                    self.op_end_vars[i, j] = self.model.NewIntVar(lb=op["start_lb"] + op["min_duration"], ub=2 ** 20, name="")
+                    self.op_end_vars[i, j] = self.model.NewIntVar(lb=op["start_lb"] + op["min_duration"], ub=2 ** 40, name="")
 
                     for res in op["resources"]:
-                        if res["release_time"] == 0:
-                            res["release_time"] = self.model.NewBoolVar(name="")
                         res_to_ops[res["resource"]].append(j)
 
                     for s in op["successors"]:
@@ -297,17 +287,21 @@ class LnsDisplibSolver:
                             size = self.feasible_sol[train][timings["end"][0]]["end"] + rt - start
                             interval_vars.append(self.model.NewFixedSizeIntervalVar(start=start, size=size, name=""))
                         else:
-                            start_var = self.model.NewIntVar(lb=0, ub=2 ** 20, name="")
+                            start_var = self.model.NewIntVar(lb=0, ub=2 ** 40, name="")
                             for start in timings["start"]:
-                                self.model.add(start_var <= self.op_start_vars[train, start])
+                                start_selected = self.model.NewBoolVar(name="")
+                                self.model.add(sum(self.edge_select_vars[train][out_e] for out_e in self.train_graphs[train].out_edges(start)) == start_selected)
+                                self.model.add(start_var <= self.op_start_vars[train, start]).OnlyEnforceIf(start_selected)
 
-                            end_var = self.model.NewIntVar(lb=0, ub=2 ** 20, name="")
+                            end_var = self.model.NewIntVar(lb=0, ub=2 ** 40, name="")
                             for end in timings["end"]:
                                 rt = self.find_release_time(train, end, res)
-                                self.model.add(end_var >= self.op_end_vars[train, end] + rt)
+                                end_selected = self.model.NewBoolVar(name="")
+                                self.model.add(sum(self.edge_select_vars[train][out_e] for out_e in self.train_graphs[train].out_edges(end)) == end_selected)
+                                self.model.add(end_var >= self.op_end_vars[train, end] + rt).OnlyEnforceIf(end_selected)
 
                             res_avoidance_possible = res in self.resource_usage_vars[train].keys()
-                            size = self.model.NewIntVar(lb=0, ub=2 ** 20, name="")
+                            size = self.model.NewIntVar(lb=0, ub=2 ** 40, name="")
 
                             if res_avoidance_possible:
                                 interval_vars.append(self.model.NewOptionalIntervalVar(start=start_var, end=end_var, is_present=self.resource_usage_vars[train][res], size=size, name=f"Optional interval for resource {res} for Train {train}"))
@@ -367,28 +361,13 @@ class LnsDisplibSolver:
             train_sol = {}
             v = 0
 
-            resource_list = []
-            for res in self.trains[train][v]["resources"]:
-                if type(res["release_time"]) == int:
-                    resource_list.append(res)
-                else:
-                    resource_list.append({"resource": res["resource"], "release_time": round(self.solver.value(res["release_time"]))})
-
-            train_sol.update({v: {"start": round(self.solver.value(self.op_start_vars[train, v])), "end": round(self.solver.value(self.op_end_vars[train, v])), "resources": resource_list}})
+            train_sol.update({v: {"start": round(self.solver.value(self.op_start_vars[train, v])), "end": round(self.solver.value(self.op_end_vars[train, v])), "resources": self.trains[train][v]["resources"]}})
 
             while v != len(self.train_graphs[train].nodes) - 1:
                 for succ in self.trains[train][v]["successors"]:
                     if round(self.solver.value(self.edge_select_vars[train][(v, succ)])) == 1:
                         v = succ
-
-                        resource_list = []
-                        for res in self.trains[train][v]["resources"]:
-                            if type(res["release_time"]) == int:
-                                resource_list.append(res)
-                            else:
-                                resource_list.append({"resource": res["resource"], "release_time": round(self.solver.value(res["release_time"]))})
-
-                        train_sol.update({v: {"start": round(self.solver.value(self.op_start_vars[train, v])), "end": round(self.solver.value(self.op_end_vars[train, v])), "resources": resource_list}})
+                        train_sol.update({v: {"start": round(self.solver.value(self.op_start_vars[train, v])), "end": round(self.solver.value(self.op_end_vars[train, v])), "resources": self.trains[train][v]["resources"]}})
                         break
 
             self.feasible_sol[train] = train_sol

@@ -1,6 +1,7 @@
-import json, os, itertools
+import json, os, itertools, tqdm
 from collections import defaultdict
 
+import matplotlib.pyplot as plt
 import networkx as nx
 
 
@@ -14,7 +15,8 @@ def check_properties(instance, instance_name):
 
     # analyze_solution_and_instance(instance, instance_name)
     # resource_duplicates_per_operation(instance, instance_name)
-    check_for_zero_release_times(instance, instance_name)
+    # check_for_zero_release_times(instance, instance_name)
+    analyze_operations_graphs(instance, instance_name)
 
 def repeated_resource_usage(trains):
     graph = nx.DiGraph()
@@ -109,3 +111,56 @@ def check_for_zero_release_times(instance, instance_name):
                     print(f"Train: {i} - Operation: {j}")
                     return
     print(f"No zero-release-times found for {instance_name}")
+
+
+def analyze_operations_graphs(instance, instance_name):
+    os.makedirs(f"Graphs/{instance_name[:len(instance_name) - 5]}", exist_ok=True)
+    graphs = []
+
+    for train in instance.trains:
+        graph = nx.DiGraph()
+        graph.add_nodes_from([i for i, _ in enumerate(train)])
+        for i, operation in enumerate(train):
+            graph.add_edges_from([(i, v) for v in operation["successors"]])
+        graphs.append(graph)
+
+    for i, graph in tqdm.tqdm(enumerate(graphs), desc="Creating Graphs"):
+        max_y = 0
+        for op in instance.trains[i]:
+            max_y = max(max_y, len(op["successors"]))
+        depth = nx.single_source_shortest_path_length(graph, 0)
+
+        red_nodes = set()
+        for obj in instance.objectives:
+            if obj["train"] == i:
+                red_nodes.add(obj["operation"])
+
+        depth_groups = {}
+        for node, d in depth.items():
+            if d not in depth_groups:
+                depth_groups[d] = []
+            depth_groups[d].append(node)
+
+        pos = {}
+        for d, nodes in depth_groups.items():
+            count = len(nodes)
+            for j, node in enumerate(sorted(nodes)):
+                pos[node] = (d, -((count - 1) / 2) + j)
+
+        x = nx.shortest_path_length(graph, 0, len(graph.nodes) - 1)
+        plt.figure(figsize=(x, max_y + 2))
+        nx.draw(
+            graph,
+            pos,
+            with_labels=True,
+            node_size=700,
+            node_color=["#B03A2E" if node in red_nodes else "lightblue" for node in graph.nodes()],
+            font_size=10,
+            font_color="black",
+            edge_color="gray",
+            arrows=True,
+            arrowsize=20
+        )
+
+        plt.savefig(f"Graphs/{instance_name[:len(instance_name) - 5]}/train_{i}.png", format="png")
+        plt.close()

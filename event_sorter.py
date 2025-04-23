@@ -1,11 +1,14 @@
 import networkx as nx
 import itertools
+import logging
 
 class EventSorter:
     def __init__(self, feasible_sol):
         self.feasible_sol = feasible_sol
         self.events = self.create_events(feasible_sol)
         self.topological_sort()
+        self.status = True
+
 
 
     def topological_sort(self):
@@ -32,8 +35,10 @@ class EventSorter:
                             sorted_events.append(self.events[lhs + node])
                     except nx.NetworkXUnfeasible:
                         # If topological sorting fails, append the original event list instead
-                        print(f"Error sorting events {lhs} - {rhs}")
-                        sorted_events.extend(self.events[lhs:rhs])
+                        logging.info("Error sorting events")
+                        self.status = False
+                        return
+                        # sorted_events.extend(self.events[lhs:rhs])
             else:
                 sorted_events.append(self.events[lhs])
 

@@ -1,8 +1,6 @@
-import argparse, json, os
-import logging
-import time
-from copy import deepcopy
+import argparse, json, os, time, logging, subprocess
 
+from copy import deepcopy
 from data import Instance
 from heuristic import Heuristic
 from logger import TimeLogger
@@ -33,7 +31,7 @@ def parse_instance(instance):
                     if res["resource"] not in used_resources:
                         used_resources.add(res["resource"])
                         if "release_time" not in res:
-                            instance["trains"][i][j]["resources"][r]["release_time"] = 0
+                            instance["trains"][i][j]["resources"][r]["release_time"] = 1
                     else:
                         instance["trains"][i][j]["resources"].remove(res)
 
@@ -73,9 +71,12 @@ def solve_instance(instance):
         log.write_log_to_file("Logs", f"log_{args.instance}")
         print(f"Found for {args.instance}. Elapsed time: {time.time() - log.start}")
     else:
-        # TODO: Rework from here
-        LnsCoordinator(instance, log, res_eval, train_to_res, 600 - (time.time() - log.start)).solve()
-        log.write_final_solution_to_file("Solutions", f"10min_sol2_{args.instance}")
+        log.write_final_solution_to_file("Solutions", "temp.json")
+        if not subprocess.run(f"python displib_verify.py Instances/{args.instance} Solutions/temp.json", shell=True, capture_output=True).returncode:
+            LnsCoordinator(instance, log, res_eval, train_to_res, 600 - (time.time() - log.start)).solve()
+            log.write_final_solution_to_file("Solutions", f"10min_sol2_{args.instance}")
+        else:
+            logging.critical("Heuristic-Solution is not valid!")
 
 
 def count_resource_appearances(trains):

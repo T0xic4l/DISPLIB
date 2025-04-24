@@ -6,22 +6,21 @@ import networkx as nx
 
 
 def check_properties(instance, instance_name):
-    '''
     if repeated_resource_usage(instance.trains):
         print("A train used a resource more than once.")
     else:
         print("No train uses any of its resources no more than once independently")
-    '''
 
     # analyze_solution_and_instance(instance, instance_name)
     # resource_duplicates_per_operation(instance, instance_name)
     # check_for_zero_release_times(instance, instance_name)
     analyze_operations_graphs(instance, instance_name)
+    # repeated_resource_usage(instance.trains)
 
 def repeated_resource_usage(trains):
-    graph = nx.DiGraph()
-
+    # TODO: FUNKTIONIERT NICHT!!!
     for i, train in enumerate(trains):
+        graph = nx.DiGraph()
         for j, op in enumerate(train):
             current_resources = [r["resource"] for r in op["resources"]]
             for res in op["resources"]:
@@ -34,14 +33,14 @@ def repeated_resource_usage(trains):
                         Diese kleine Regel löscht teils viele Kanten und dadurch umso mehr Kreise im Deadlock-Graph!
                         Zusätzlich haben wir hiermit auch herausgefunden, dass ein Zug eine Ressource maximal EIN MAL durchgehend besitzt und danach nie wieder!
                         '''
-                        if edge[0] == edge[1] or edge in graph.edges or succ_res["resource"] in current_resources or res["release_time"] != 0:
+                        if edge[0] == edge[1] or edge in graph.edges or succ_res["resource"] in current_resources:
                             continue
                         else:
                             graph.add_nodes_from([res["resource"], succ_res["resource"]])
                             graph.add_edge(edge[0], edge[1])
 
-    if len(list(nx.simple_cycles(graph))):
-        return True
+        if len(list(nx.simple_cycles(graph))):
+            return True
 
     return False
 
@@ -135,6 +134,12 @@ def analyze_operations_graphs(instance, instance_name):
             if obj["train"] == i:
                 red_nodes.add(obj["operation"])
 
+        red_nodes1 = set()
+        for j, op in enumerate(instance.trains[i]):
+            for res in op["resources"]:
+                if res["resource"] == "HGO_73":
+                    red_nodes1.add(j)
+
         depth_groups = {}
         for node, d in depth.items():
             if d not in depth_groups:
@@ -154,7 +159,7 @@ def analyze_operations_graphs(instance, instance_name):
             pos,
             with_labels=True,
             node_size=700,
-            node_color=["#B03A2E" if node in red_nodes else "lightblue" for node in graph.nodes()],
+            node_color=["#B03A2E" if node in red_nodes1 else "lightblue" for node in graph.nodes()],
             font_size=10,
             font_color="black",
             edge_color="gray",

@@ -197,11 +197,18 @@ class LnsDisplibSolver:
 
                 if train in self.choice:
                     op = obj["operation"]
-                    # TODO: Ist Operation überhaupt ausgewählt?
-                    if obj["coeff"]:
-                        self.model.add(self.threshold_vars[train, op] >= self.op_start_vars[train, op] - obj["threshold"])
+                    op_selected = self.model.new_bool_var(name="")
+                    if op != 0:
+                        self.model.add(op_selected == sum(
+                            self.edge_select_vars[train][in_e] for in_e in self.train_graphs[train].in_edges(op)))
                     else:
-                        self.model.add(self.op_start_vars[train, op] + 1 <= obj["threshold"]).OnlyEnforceIf(self.threshold_vars[train, op].Not())
+                        self.model.add(op_selected == sum(
+                            self.edge_select_vars[train][out_e] for out_e in self.train_graphs[train].out_edges(op)))
+
+                    if obj["coeff"]:
+                        self.model.add(self.threshold_vars[train, op] >= self.op_start_vars[train, op] - obj["threshold"]).OnlyEnforceIf(op_selected)
+                    else:
+                        self.model.add(self.op_start_vars[train, op] + 1 <= obj["threshold"]).OnlyEnforceIf([self.threshold_vars[train, op].Not(), op_selected])
 
 
     def add_path_constraints(self):

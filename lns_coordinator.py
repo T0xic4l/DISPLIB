@@ -74,8 +74,6 @@ class LnsCoordinator:
                 strategy += 1
 
 
-
-
     def calculate_remaining_time(self):
         return max(0, self.has_to_be_finished_at - time())
 

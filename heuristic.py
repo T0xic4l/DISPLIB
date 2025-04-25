@@ -1,14 +1,13 @@
 import random
 import logging
 import networkx as nx
-import time
 
 from copy import deepcopy
 from collections import defaultdict
 from itertools import count
 
 from ortools.sat.python import cp_model as cp
-from logger import Log, TimeLogger
+from logger import TimeLogger
 
 
 class TrainSolver:
@@ -297,7 +296,6 @@ class TrainSolver:
 
 class Heuristic:
     def __init__(self, instance, res_eval, train_to_res):
-        self.log = Log(instance.objectives)
         self.instance = instance
         self.trains = instance.trains
         self.res_eval = res_eval
@@ -407,9 +405,11 @@ class Heuristic:
             scc_start = max_end + max_rt
             logging.info(f"Scheduling {scc} done \n")
 
-        self.log.set_solution(feasible_solution)
-        self.log.heuristic_calculation_time = time.time() - self.log.start
-        return self.log
+        result = {
+            "solution" : feasible_solution,
+            "scc_count" : len(self.blocking_dependencies)
+        }
+        return result
 
 
     def calculate_conflicted_trains(self, conflicting_trains, scheduled_trains, scc, feasible_solution):

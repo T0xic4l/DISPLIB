@@ -1,18 +1,14 @@
 import argparse, json, os, time, logging, subprocess
+import sys
 
 from copy import deepcopy
 from data import Instance
 from heuristic import Heuristic
+from event_sorter import EventSorter
 from logger import TimeLogger
 from instance_properties import check_properties
 from lns_coordinator import LnsCoordinator
-
-
-path = os.path.join("Logs", "meine_logs.log")
-os.makedirs(os.path.dirname(path), exist_ok=True)
-file_handler = logging.FileHandler('log.txt', mode='w')
-console_handler = logging.StreamHandler()
-logging.basicConfig(level=logging.INFO, format='%(levelname)s - %(message)s', handlers=[file_handler, console_handler])
+from logging.handlers import MemoryHandler
 
 
 def parse_instance(instance):
@@ -50,6 +46,8 @@ def parse_instance(instance):
 
 
 def main():
+    start = time.perf_counter()
+    time_limit = args.timelimit
     try:
         with open(os.path.join("Instances", args.instance), 'r') as file:
             instance = json.load(file)
@@ -60,26 +58,59 @@ def main():
     instance = parse_instance(instance)
 
     if args.checkproperties:
+        memory_handler = setup_logger()
+        flush_logs_to_file(memory_handler, f"Logs/Properties/{args.instance}")
         check_properties(instance, args.instance)
     else:
-        solve_instance(instance)
+        memory_handler = setup_logger()
+        sol = solve_instance(instance, time_limit, (time.perf_counter()-start))
+
+        solution_written = write_solution_to_file(f"Solutions/10min_sol_{args.instance}", calculate_objective_value(instance.objectives, sol), sol)
+        if solution_written:
+            flush_logs_to_file(memory_handler, f"Logs/SolutionLogs/{os.path.splitext(args.instance)[0] + ".txt"}")
+            if subprocess.run(f"python displib_verify.py Instances/{args.instance} Solutions/10min_sol_{args.instance}", shell=True, capture_output=True).returncode:
+                logging.error("Final solution is not valid.")
+            else:
+                logging.info("Final solution is valid")
 
 
-def solve_instance(instance):
+def solve_instance(instance, time_limit, time_passed):
+    start = time.perf_counter()
     res_eval, train_to_res = count_resource_appearances(instance.trains)
-    log = Heuristic(deepcopy(instance), res_eval, train_to_res).schedule()
 
-    if args.debug:
-        log.write_final_solution_to_file("HeuristicSolutions", f"hsol_{args.instance}")
-        log.write_log_to_file("Logs", f"log_{args.instance}")
-        print(f"Found for {args.instance}. Elapsed time: {time.time() - log.start}")
-    else:
-        log.write_final_solution_to_file("Solutions", "temp.json")
-        if not subprocess.run(f"python displib_verify.py Instances/{args.instance} Solutions/temp.json", shell=True, capture_output=True).returncode:
-            LnsCoordinator(instance, log, res_eval, train_to_res, 600 - (time.time() - log.start)).solve()
-            log.write_final_solution_to_file("Solutions", f"10min_sol2_{args.instance}")
-        else:
-            logging.critical("Heuristic-Solution is not valid!")
+    with TimeLogger("Calculating heuristic solution - "):
+        h_result = Heuristic(deepcopy(instance), res_eval, train_to_res).schedule()
+
+    if args.heuristicsol:
+        write_solution_to_file(f"HeuristicSolutions/hsol_{args.instance}", calculate_objective_value(instance.objectives, h_result["solution"]), h_result["solution"])
+        if args.debug:
+            if subprocess.run(f"python displib_verify.py Instances/{args.instance} HeuristicSolutions/hsol_{args.instance}", shell=True, capture_output=True).returncode:
+                logging.error("Heuristic solution is not valid.")
+                sys.exit(1)
+    return LnsCoordinator(instance, h_result, res_eval, train_to_res, time_limit, time.perf_counter() - start).solve()
+
+
+def setup_logger():
+    memory_handler = MemoryHandler(
+        capacity=10000,
+        flushLevel=logging.CRITICAL + 1,
+        target=None)
+
+    console_handler = logging.StreamHandler()
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(levelname)s - %(message)s',
+        handlers=[memory_handler, console_handler]
+    )
+    return memory_handler
+
+
+def flush_logs_to_file(memory_handler, path):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    file_handler = logging.FileHandler(path, mode='w')
+    memory_handler.setTarget(file_handler)
+    memory_handler.flush()
+    file_handler.close()
 
 
 def count_resource_appearances(trains):
@@ -100,10 +131,35 @@ def count_resource_appearances(trains):
     return resource_appearances, train_to_resources
 
 
+def write_solution_to_file(filename, objective, solution):
+    if os.path.exists(filename):
+        with open(filename, 'r') as file:
+            try:
+                prev_solution = json.load(file)
+                if prev_solution["objective_value"] <= objective:
+                    logging.info("A better or equal solution for this instance already exists. Discarding current solution.")
+                    return False
+            except json.JSONDecodeError:
+                logging.warning("Existing solution could not be parsed. Overwriting.")
+
+    os.makedirs(os.path.dirname(filename), exist_ok=True)
+    with open(filename, 'w') as file:
+        json.dump({"objective_value": objective, "events": EventSorter(deepcopy(solution)).events}, file)
+        return True
+
+def calculate_objective_value(objectives, solution):
+    return sum(obj["coeff"] * max(0, solution[obj["train"]][obj["operation"]]["start"] - obj["threshold"])
+               + obj["increment"] * int(solution[obj["train"]][obj["operation"]]["start"] >= obj["threshold"])
+               for obj in objectives if obj["operation"] in solution[obj["train"]])
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(prog="DISPLIB-Solver", description="By Lina Breuer and Elias Kaiser")
     parser.add_argument('instance', help="Filename of the instance that needs to be solved. The solution of the instance will be saved in Solutions/ as sol_<instance>. The instance has to be located in Instances/", type=str)
+    parser.add_argument('--timelimit', type=int, default=600, help="The time-limit in which the solution for the instance has to be calculated.")
     parser.add_argument('--checkproperties', action='store_true', help='Check for properties.')
     parser.add_argument('--debug', action='store_true', help='Activates debug-mode.')
+    parser.add_argument('--heuristicsol', action='store_true', help='Print heuristic solution to file.')
     args = parser.parse_args()
     main()
+

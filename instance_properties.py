@@ -1,48 +1,50 @@
 import json, os, itertools, tqdm
 from collections import defaultdict
+import logging
 
 import matplotlib.pyplot as plt
 import networkx as nx
 
+from heuristic import create_train_graph
+
 
 def check_properties(instance, instance_name):
-    if repeated_resource_usage(instance.trains):
+    '''
+    if repeated_resource_usage(instance.trains, instance_name):
         print("A train used a resource more than once.")
     else:
         print("No train uses any of its resources no more than once independently")
-
+    '''
     # analyze_solution_and_instance(instance, instance_name)
     # resource_duplicates_per_operation(instance, instance_name)
     # check_for_zero_release_times(instance, instance_name)
     analyze_operations_graphs(instance, instance_name)
     # repeated_resource_usage(instance.trains)
 
-def repeated_resource_usage(trains):
-    # TODO: FUNKTIONIERT NICHT!!!
+def repeated_resource_usage(trains, instance_name):
+    logging.info("\nrepeated resource usage:")
     for i, train in enumerate(trains):
-        graph = nx.DiGraph()
-        for j, op in enumerate(train):
-            current_resources = [r["resource"] for r in op["resources"]]
-            for res in op["resources"]:
-                for succ in op["successors"]:
-                    for succ_res in train[succ]["resources"]:
-                        edge = (res["resource"], succ_res["resource"])
-                        '''
-                        Wenn ein Zug einen Wechsel von A nach B hat, sollte die Kante A->B nur gesetzt werden, wenn dieser Zug in diesem Moment A nicht besitzt.
-                        
-                        Diese kleine Regel löscht teils viele Kanten und dadurch umso mehr Kreise im Deadlock-Graph!
-                        Zusätzlich haben wir hiermit auch herausgefunden, dass ein Zug eine Ressource maximal EIN MAL durchgehend besitzt und danach nie wieder!
-                        '''
-                        if edge[0] == edge[1] or edge in graph.edges or succ_res["resource"] in current_resources:
-                            continue
-                        else:
-                            graph.add_nodes_from([res["resource"], succ_res["resource"]])
-                            graph.add_edge(edge[0], edge[1])
+        print(f"Train {i} / {len(trains) - 1}")
+        used_resources = set([res["resource"] for op in train for res in op["resources"]])
 
-        if len(list(nx.simple_cycles(graph))):
-            return True
+        for u_res in used_resources:
+            graph = create_train_graph(train)
 
-    return False
+            # Reduce graph such that the start and the end of an arbitrary path in the DAG uses the resource u_res
+            while True:
+                starts = [node for node in graph.nodes if len(list(graph.in_edges(node))) == 0 and not any(u_res == res["resource"] for res in train[node]["resources"])]
+                ends = [node for node in graph.nodes if len(list(graph.out_edges(node))) == 0 and not any(u_res == res["resource"] for res in train[node]["resources"])]
+
+                if not len(starts) and not len(ends):
+                    break
+
+                graph.remove_nodes_from(starts + ends)
+
+            graph.remove_nodes_from([node for node in graph.nodes if any(u_res == res["resource"] for res in train[node]["resources"])])
+
+            if len(list(graph.nodes)):
+                logging.info(f"Train {i} | Res {u_res}")
+                break
 
 
 def analyze_solution_and_instance(instance, instance_name):
@@ -137,7 +139,7 @@ def analyze_operations_graphs(instance, instance_name):
         red_nodes1 = set()
         for j, op in enumerate(instance.trains[i]):
             for res in op["resources"]:
-                if res["resource"] == "HGO_73":
+                if res["resource"] == "LQ_73":
                     red_nodes1.add(j)
 
         depth_groups = {}

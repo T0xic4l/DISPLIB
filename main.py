@@ -159,6 +159,8 @@ if __name__ == "__main__":
     parser.add_argument('--checkproperties', action='store_true', help='Check for properties.')
     parser.add_argument('--heuristicsol', action='store_true', help='Print heuristic solution to file.')
     parser.add_argument('--debug', action='store_true', help='Activates debug-mode.')
+    parser.add_argument('--slurm', action='store_true', help='Launches slurm jobs for each instance.')
+    parser.add_argument('--pc', type=str, help='Chooses the pc. Available: pc01 | pc02 | pc03')
     args = parser.parse_args()
     slurminade.update_default_configuration(
         partition="alg",
@@ -168,6 +170,10 @@ if __name__ == "__main__":
         cpus_per_task=8,
         mem=32_000
     )
-        # (instance_path, time_limit, checkproperties, heuristicsol, debug):
-    for instance_path in [f for f in os.listdir("Instances") if f.endswith(".json")]:
-        main.distribute(instance_path, args.timelimit, args.checkproperties, args.heuristicsol, args.debug)
+
+    if args.slurm:
+        for instance_path in [f for f in os.listdir("Instances") if f.endswith(".json")]:
+            main.distribute(instance_path, args.timelimit, args.checkproperties, args.heuristicsol, args.debug)
+    else:
+        for instance_path in [f for f in os.listdir(os.path.join("Instances", args.pc)) if f.endswith(".json")]:
+            main(instance_path, args.timelimit, args.checkproperties, args.heuristicsol, args.debug)

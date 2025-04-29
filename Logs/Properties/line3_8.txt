@@ -1,0 +1,11 @@
+INFO - 
+repeated resource usage:
+INFO - Train 16 | Res LQ_73
+INFO - Train 17 | Res LQ_73
+INFO - Train 18 | Res LQ_73
+INFO - Train 19 | Res LQ_73
+INFO - Train 20 | Res LQ_73
+INFO - Train 21 | Res LQ_73
+INFO - Train 25 | Res LQ_73
+INFO - Train 26 | Res LQ_73
+INFO - Train 27 | Res LQ_73

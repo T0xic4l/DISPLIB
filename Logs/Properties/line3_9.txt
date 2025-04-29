@@ -1,0 +1,16 @@
+INFO - 
+repeated resource usage:
+INFO - Train 66 | Res BAA_82
+INFO - Train 67 | Res BAA_82
+INFO - Train 68 | Res BAA_82
+INFO - Train 69 | Res BAA_82
+INFO - Train 70 | Res BAA_82
+INFO - Train 71 | Res BAA_82
+INFO - Train 72 | Res BAA_82
+INFO - Train 73 | Res BAA_82
+INFO - Train 74 | Res BAA_82
+INFO - Train 75 | Res BAA_82
+INFO - Train 76 | Res BAA_82
+INFO - Train 77 | Res BAA_82
+INFO - Train 78 | Res BAA_82
+INFO - Train 79 | Res BAA_82

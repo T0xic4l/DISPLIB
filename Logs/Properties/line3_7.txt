@@ -1,0 +1,25 @@
+INFO - 
+repeated resource usage:
+INFO - Train 48 | Res LQ_73
+INFO - Train 49 | Res LQ_73
+INFO - Train 50 | Res LQ_73
+INFO - Train 51 | Res LQ_73
+INFO - Train 52 | Res LQ_73
+INFO - Train 53 | Res LQ_73
+INFO - Train 54 | Res LQ_73
+INFO - Train 55 | Res LQ_73
+INFO - Train 56 | Res LQ_73
+INFO - Train 57 | Res LQ_73
+INFO - Train 58 | Res LQ_73
+INFO - Train 59 | Res LQ_73
+INFO - Train 60 | Res LQ_73
+INFO - Train 61 | Res LQ_73
+INFO - Train 62 | Res LQ_73
+INFO - Train 63 | Res LQ_73
+INFO - Train 72 | Res LQ_73
+INFO - Train 73 | Res LQ_73
+INFO - Train 74 | Res LQ_73
+INFO - Train 75 | Res LQ_73
+INFO - Train 76 | Res LQ_73
+INFO - Train 77 | Res LQ_73
+INFO - Train 78 | Res LQ_73

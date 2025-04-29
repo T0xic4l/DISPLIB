@@ -1,0 +1,7 @@
+INFO - 
+repeated resource usage:
+INFO - Train 62 | Res HGO_73
+INFO - Train 63 | Res HGO_73
+INFO - Train 64 | Res HGO_73
+INFO - Train 65 | Res HGO_73
+INFO - Train 66 | Res HGO_73

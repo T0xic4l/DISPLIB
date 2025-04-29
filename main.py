@@ -28,7 +28,7 @@ def parse_instance(instance):
                     for f_res in op["resources"]:
                         if f_res["resource"] == res:
                             if "release_time" not in f_res:
-                                resources.append({"resource": res, "release_time": 1})
+                                resources.append({"resource": res, "release_time": 0})
                             else:
                                 resources.append({"resource": res, "release_time": f_res["release_time"]})
                             break
@@ -44,6 +44,16 @@ def parse_instance(instance):
 
     return Instance(instance["trains"], instance["objective"])
 
+
+def increase_release_times(instance):
+    for train in instance.trains:
+        for op in train:
+            for res in op["resources"]:
+                if not res["release_time"]:
+                    res["release_time"] = 1
+    return instance
+
+
 @slurminade.slurmify()
 def main(instance_path, time_limit, checkproperties, heuristicsol, debug):
     start = time.perf_counter()
@@ -54,15 +64,17 @@ def main(instance_path, time_limit, checkproperties, heuristicsol, debug):
         print(f"File {instance_path} was not found")
         return
 
-    instance = parse_instance(instance)
+    original_instance = parse_instance(instance)
+    instance = increase_release_times(deepcopy(original_instance))
 
     if checkproperties:
         memory_handler = setup_logger()
         flush_logs_to_file(memory_handler, f"Logs/Properties/{instance_path}")
         check_properties(instance, instance_path)
     else:
+        logging.info(f"Solving instance {instance_path}\n")
         memory_handler = setup_logger()
-        sol = solve_instance(instance, time_limit, (time.perf_counter()-start), heuristicsol, instance_path, debug)
+        sol = solve_instance(original_instance, instance, time_limit, (time.perf_counter()-start), heuristicsol, instance_path, debug)
 
         solution_written = write_solution_to_file(f"Solutions/10min_sol_{instance_path}", calculate_objective_value(instance.objectives, sol), sol)
         if solution_written:
@@ -73,7 +85,7 @@ def main(instance_path, time_limit, checkproperties, heuristicsol, debug):
                 logging.info("Final solution is valid")
 
 
-def solve_instance(instance, time_limit, time_passed, heuristicsol, instance_path, debug):
+def solve_instance(original_instance, instance, time_limit, time_passed, heuristicsol, instance_path, debug):
     start = time.perf_counter()
     res_eval, train_to_res = count_resource_appearances(instance.trains)
 
@@ -86,7 +98,7 @@ def solve_instance(instance, time_limit, time_passed, heuristicsol, instance_pat
             if subprocess.run(f"python displib_verify.py Instances/{instance_path} HeuristicSolutions/hsol_{instance_path}", shell=True, capture_output=True).returncode:
                 logging.error("Heuristic solution is not valid.")
                 sys.exit(1)
-    return LnsCoordinator(instance, h_result, res_eval, train_to_res, time_limit, time.perf_counter() - start).solve()
+    return LnsCoordinator(original_instance, instance, h_result, res_eval, train_to_res, time_limit, time.perf_counter() - start).solve()
 
 
 def setup_logger():
@@ -136,7 +148,7 @@ def write_solution_to_file(filename, objective, solution):
             try:
                 prev_solution = json.load(file)
                 if prev_solution["objective_value"] <= objective:
-                    logging.info("A better or equal solution for this instance already exists. Discarding current solution.")
+                    logging.info(f"A better or equal solution with obj_value {prev_solution["objective_value"]} for this instance already exists. Discarding current solution with obj_value {objective}.")
                     return False
             except json.JSONDecodeError:
                 logging.warning("Existing solution could not be parsed. Overwriting.")

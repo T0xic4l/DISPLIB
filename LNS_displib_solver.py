@@ -17,10 +17,11 @@ from logger import TimeLogger
 
 
 class LnsDisplibSolver:
-    def __init__(self, instance : Instance, feasible_solution, choice, semi_fixed, train_to_resources, time_limit, res_version):
+    def __init__(self, instance : Instance, feasible_solution, choice, semi_fixed, train_to_resources, time_limit, deadlocks=False):
         logging.debug(f"Variable Trains: {choice}")
         self.time_limit = time_limit
         self.current_time = time()
+        self.deadlocks = deadlocks
         self.deadlock_constraints_added = True
 
         self.old_solution = copy.deepcopy(feasible_solution)
@@ -44,29 +45,20 @@ class LnsDisplibSolver:
         self.threshold_vars = dict()
 
         with TimeLogger("Model Setup"):
-            if res_version == 1:
-                self.create_objective_vars()
-                self.resource_conflicts = defaultdict(list)
-                self.create_vars_v1()
-            elif res_version == 2:
-                self.create_objective_vars()
-                self.resource_conflicts = defaultdict(lambda : defaultdict(lambda :defaultdict(list)))
-                self.resource_usage_vars = defaultdict(dict)
-                self.create_vars_v2()
-
-        #self.deadlock_graph = self.create_deadlock_graph_v2()
+            self.create_objective_vars()
+            self.resource_conflicts = defaultdict(lambda : defaultdict(lambda :defaultdict(list)))
+            self.resource_usage_vars = defaultdict(dict)
+            self.create_vars()
 
         with TimeLogger("Constraints"):
             self.add_threshold_constraints()
             self.add_path_constraints()
             self.add_timing_constraints()
-            if res_version == 1:
-                self.add_resource_constraints()
-                #self.add_deadlock_constraints_v1()
-            elif res_version == 2:
-                self.add_new_resource_constraints()
-                self.add_resource_usage_constraints()
-                #self.add_deadlock_constraints_v2()
+            self.add_resource_constraints()
+            self.add_resource_usage_constraints()
+            if self.deadlocks:
+                self.deadlock_graph = self.create_deadlock_graph()
+                self.add_deadlock_constraints()
             self.add_solution_hint()
 
         self.set_objective()
@@ -75,7 +67,16 @@ class LnsDisplibSolver:
     def solve(self):
         self.solver.parameters.log_search_progress = False
         self.solver.parameters.num_workers = 8
-        self.solver.parameters.max_time_in_seconds = min(15, self.time_limit - time() + self.current_time) # This is just experimental to prevent time loss for expensive cycles
+
+        if not self.deadlock_constraints_added:
+            logging.warning("Too many deadlock constraints. Returning the old solution")
+            return self.old_solution
+
+        if time() - self.current_time >= self.time_limit:
+            logging.info("No time to solve the model. Returning the old solution")
+            return self.old_solution
+
+        self.solver.parameters.max_time_in_seconds = max(0, self.time_limit - time() + self.current_time) # This is just experimental to prevent time loss for expensive cycles
         status = self.solver.Solve(self.model)
 
         if status == cp.OPTIMAL or status == cp.FEASIBLE:
@@ -97,29 +98,7 @@ class LnsDisplibSolver:
                                 for obj in self.objectives if obj["train"] in self.choice or (obj["train"] in self.semi_fixed and obj["operation"] in list(self.feasible_sol[obj["train"]].keys()))))
 
 
-    def create_vars_v1(self):
-        with TimeLogger("Creating vars"):
-            for i in self.choice:
-                for j, op in enumerate(self.trains[i]):
-                    self.op_start_vars[i, j] = self.model.NewIntVar(lb=op["start_lb"], ub=op["start_ub"], name="")
-                    self.op_end_vars[i, j] = self.model.NewIntVar(lb=op["start_lb"] + op["min_duration"], ub=2 ** 40, name="")
-
-                    for res in op["resources"]:
-                        if res["release_time"] == 0:
-                            res["release_time"] = self.model.NewBoolVar(name="")
-                        self.resource_conflicts[res["resource"]].append((i, j))
-
-                    for s in op["successors"]:
-                        self.edge_select_vars[i][j, s] = self.model.NewBoolVar(name="")
-
-            for i in self.fix_trains:
-                for op in self.feasible_sol[i].keys():
-                    for res in self.trains[i][op]["resources"]:
-                        if self.resource_conflicts.get(res["resource"]):
-                            self.resource_conflicts[res["resource"]].append((i, op))
-
-
-    def create_vars_v2(self):
+    def create_vars(self):
         with TimeLogger("Creating vars"):
             for i in self.choice:
                 res_to_ops = defaultdict(list)
@@ -129,6 +108,10 @@ class LnsDisplibSolver:
 
                     for res in op["resources"]:
                         res_to_ops[res["resource"]].append(j)
+
+                        if self.deadlocks:
+                            if not res["release_time"]:
+                                res["release_time"] = self.model.NewBoolVar(name="")
 
                     for s in op["successors"]:
                         self.edge_select_vars[i][j, s] = self.model.NewBoolVar(name="")
@@ -201,6 +184,11 @@ class LnsDisplibSolver:
                 self.model.add_hint(self.op_start_vars[train, op], timings["start"])
                 self.model.add_hint(self.op_end_vars[train, op], timings["end"])
 
+        for train in self.semi_fixed:
+            for op, timings in self.feasible_sol[train].items():
+                self.model.add_hint(self.op_start_vars[train, op], timings["start"])
+                self.model.add_hint(self.op_end_vars[train, op], timings["end"])
+
 
     def add_threshold_constraints(self):
         with TimeLogger("Threshold Constraints"):
@@ -269,46 +257,6 @@ class LnsDisplibSolver:
 
     def add_resource_constraints(self):
         with TimeLogger("Resource Constraints"):
-            for res, ops in self.resource_conflicts.items():
-                if len(ops) > 1:
-                    interval_vars = {}
-
-                    for train, op in ops:
-                        if train in self.choice:
-                            op_chosen = self.model.NewBoolVar(name=f"Train {train} : Operation {op} is chosen")
-                            if op == 0 or op == len(self.train_graphs[train].nodes) - 1:
-                                self.model.add(op_chosen == 1)
-                            else:
-                                self.model.add(sum(self.edge_select_vars[train][in_edge] for in_edge in self.train_graphs[train].in_edges(op)) == op_chosen)
-
-                            rt = self.find_release_time(train, op, res)
-                            size = self.model.NewIntVar(lb=0, ub=2 ** 40, name=f"Placeholder var")
-                            end = self.model.NewIntVar(lb=0, ub=2 ** 40, name=f"Placeholder var")
-                            self.model.add(end == self.op_end_vars[train, op] + rt)
-
-                            interval_vars[train, op] = self.model.NewOptionalIntervalVar(start=self.op_start_vars[train, op],
-                                                                                            end=end,
-                                                                                            size=size,
-                                                                                            is_present=op_chosen,
-                                                                                            name=f"Optional interval for Train {train} : Operation {op}")
-                        else:
-                            rt = 0
-                            for f_res in self.feasible_sol[train][op]["resources"]:
-                                if f_res["resource"] == res:
-                                    rt = f_res["release_time"]
-
-                            interval_vars[train, op] = self.model.NewIntervalVar(start=self.feasible_sol[train][op]["start"],
-                                                                                    end=self.feasible_sol[train][op]["end"] + rt,
-                                                                                    size=self.feasible_sol[train][op]["end"] + rt - self.feasible_sol[train][op]["start"],
-                                                                                    name="")
-
-                    for (t1, op1), (t2, op2) in itertools.combinations(ops, 2):
-                        if (t1 in self.choice or t2 in self.choice) and (t1 != t2):
-                            self.model.add_no_overlap([interval_vars[t1, op1], interval_vars[t2, op2]])
-
-
-    def add_new_resource_constraints(self):
-        with TimeLogger("Resource Constraints"):
             for res, trains in self.resource_conflicts.items():
                 if len(trains.keys()) == 1:
                     continue
@@ -367,7 +315,7 @@ class LnsDisplibSolver:
                 self.model.add(sum(self.edge_select_vars[train][in_e] for in_e in in_edges) == 0).OnlyEnforceIf(res_usage_var.Not())
 
 
-    def add_deadlock_constraints_v1(self):
+    def add_deadlock_constraints(self):
         with TimeLogger("Deadlock Constraints"):
             now = time()
             connected_comps = list(nx.weakly_connected_components(self.deadlock_graph))
@@ -409,13 +357,28 @@ class LnsDisplibSolver:
             train_sol = {}
             v = 0
 
-            train_sol.update({v: {"start": round(self.solver.value(self.op_start_vars[train, v])), "end": round(self.solver.value(self.op_end_vars[train, v])), "resources": self.trains[train][v]["resources"]}})
+            resource_list = []
+            for res in self.trains[train][v]["resources"]:
+                if type(res["release_time"]) == int:
+                    resource_list.append(res)
+                else:
+                    resource_list.append({"resource": res["resource"], "release_time": round(self.solver.value(res["release_time"]))})
+
+            train_sol.update({v: {"start": round(self.solver.value(self.op_start_vars[train, v])), "end": round(self.solver.value(self.op_end_vars[train, v])), "resources": resource_list}})
 
             while v != len(self.train_graphs[train].nodes) - 1:
                 for succ in self.trains[train][v]["successors"]:
                     if round(self.solver.value(self.edge_select_vars[train][(v, succ)])) == 1:
                         v = succ
-                        train_sol.update({v: {"start": round(self.solver.value(self.op_start_vars[train, v])), "end": round(self.solver.value(self.op_end_vars[train, v])), "resources": self.trains[train][v]["resources"]}})
+
+                        resource_list = []
+                        for res in self.trains[train][v]["resources"]:
+                            if type(res["release_time"]) == int:
+                                resource_list.append(res)
+                            else:
+                                resource_list.append({"resource": res["resource"], "release_time": round(self.solver.value(res["release_time"]))})
+
+                        train_sol.update({v: {"start": round(self.solver.value(self.op_start_vars[train, v])), "end": round(self.solver.value(self.op_end_vars[train, v])), "resources": resource_list}})
                         break
 
             self.feasible_sol[train] = train_sol
@@ -438,58 +401,7 @@ class LnsDisplibSolver:
         return 0
 
 
-    def create_deadlock_graph_v1(self):
-        with TimeLogger("Deadlock Graph"):
-            graph = nx.DiGraph()
-            critical_resources = []
-            for train in self.choice:
-                for op in self.trains[train]:
-                    for res in op["resources"]:
-                        critical_resources.append(res["resource"])
-
-            for i, train in enumerate(self.trains):
-                if i in self.choice:
-                    for j, op in enumerate(train):
-                        for res in op["resources"]:
-                            if type(res["release_time"]) == int:
-                                continue
-
-                            for succ in op["successors"]:
-                                for succ_res in train[succ]["resources"]:
-                                    edge = (res["resource"], succ_res["resource"])
-
-                                    if edge[0] == edge[1]:
-                                        continue
-                                    if edge in graph.edges:
-                                        edge_data = graph[edge[0]][edge[1]].get("data", [])
-                                        edge_data.append((i, j))
-                                        graph[edge[0]][edge[1]]["data"] = edge_data
-                                    else:
-                                        graph.add_nodes_from([res["resource"], succ_res["resource"]])
-                                        graph.add_edge(edge[0], edge[1], data=[(i, j)])
-                else:
-                    for op, value in self.feasible_sol[i].items():
-                        for res in value["resources"]:
-                            if res["release_time"] != 0:
-                                continue
-
-                            for succ in train[op]["successors"]:
-                                for succ_res in train[succ]["resources"]:
-                                    edge = (res["resource"], succ_res["resource"])
-
-                                    if (edge[0] == edge[1]) or (edge[0] not in critical_resources) or (edge[1] not in critical_resources):
-                                        continue
-                                    if edge in graph.edges:
-                                        edge_data = graph[edge[0]][edge[1]].get("data", [])
-                                        edge_data.append((i, op))
-                                        graph[edge[0]][edge[1]]["data"] = edge_data
-                                    else:
-                                        graph.add_nodes_from([res["resource"], succ_res["resource"]])
-                                        graph.add_edge(edge[0], edge[1], data=[(i, op)])
-            return graph
-
-
-    def create_deadlock_graph_v2(self):
+    def create_deadlock_graph(self):
         with TimeLogger("Deadlock Constraints"):
             graph = nx.DiGraph()
             critical_resources = [res["resource"] for i in self.choice for op in self.trains[i] for res in op["resources"]]

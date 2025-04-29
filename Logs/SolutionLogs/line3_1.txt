@@ -1,0 +1,18 @@
+Start of scheduling scc: [0]
+Scheduling [0] done 
+
+Start of scheduling scc: [1]
+Scheduling [1] done 
+
+Start of scheduling scc: [2]
+Scheduling [2] done 
+
+Start of scheduling scc: [3]
+Scheduling [3] done 
+
+Starting LNS... with mode Choice, <objective>
+
+0 min 0 sec - Found solution with better objective 3229 by rescheduling [2] with <objective>
+Reset switch_mode_timer because of objective-improvement of at least 10%.
+0 min 0 sec - Found solution with objective 0.
+LNS iteration-count: count(2)

@@ -1,0 +1,539 @@
+Start of scheduling scc: [0]
+Scheduling [0] done 
+
+Start of scheduling scc: [1]
+Scheduling [1] done 
+
+Start of scheduling scc: [2]
+Scheduling [2] done 
+
+Start of scheduling scc: [3]
+Scheduling [3] done 
+
+Start of scheduling scc: [4]
+Scheduling [4] done 
+
+Start of scheduling scc: [5]
+Scheduling [5] done 
+
+Start of scheduling scc: [6]
+Scheduling [6] done 
+
+Start of scheduling scc: [7]
+Scheduling [7] done 
+
+Start of scheduling scc: [8]
+Scheduling [8] done 
+
+Start of scheduling scc: [9]
+Scheduling [9] done 
+
+Start of scheduling scc: [10]
+Scheduling [10] done 
+
+Start of scheduling scc: [11]
+Scheduling [11] done 
+
+Start of scheduling scc: [12]
+Scheduling [12] done 
+
+Start of scheduling scc: [13]
+Scheduling [13] done 
+
+Start of scheduling scc: [14]
+Scheduling [14] done 
+
+Start of scheduling scc: [15]
+Scheduling [15] done 
+
+Start of scheduling scc: [16]
+Scheduling [16] done 
+
+Start of scheduling scc: [17]
+Scheduling [17] done 
+
+Start of scheduling scc: [18]
+Scheduling [18] done 
+
+Start of scheduling scc: [19]
+Scheduling [19] done 
+
+Start of scheduling scc: [20]
+Scheduling [20] done 
+
+Start of scheduling scc: [21]
+Scheduling [21] done 
+
+Start of scheduling scc: [22]
+Scheduling [22] done 
+
+Start of scheduling scc: [23]
+Scheduling [23] done 
+
+Start of scheduling scc: [24]
+Scheduling [24] done 
+
+Start of scheduling scc: [25]
+Scheduling [25] done 
+
+Start of scheduling scc: [26]
+Scheduling [26] done 
+
+Start of scheduling scc: [27]
+Scheduling [27] done 
+
+Start of scheduling scc: [28]
+Scheduling [28] done 
+
+Start of scheduling scc: [29]
+Scheduling [29] done 
+
+Start of scheduling scc: [34]
+Scheduling [34] done 
+
+Start of scheduling scc: [35]
+Scheduling [35] done 
+
+Start of scheduling scc: [36]
+Scheduling [36] done 
+
+Start of scheduling scc: [37]
+Scheduling [37] done 
+
+Start of scheduling scc: [38]
+Scheduling [38] done 
+
+Start of scheduling scc: [39]
+Scheduling [39] done 
+
+Start of scheduling scc: [40]
+Scheduling [40] done 
+
+Start of scheduling scc: [41]
+Scheduling [41] done 
+
+Start of scheduling scc: [42]
+Scheduling [42] done 
+
+Start of scheduling scc: [43]
+Scheduling [43] done 
+
+Start of scheduling scc: [44]
+Scheduling [44] done 
+
+Start of scheduling scc: [45]
+Scheduling [45] done 
+
+Start of scheduling scc: [46]
+Scheduling [46] done 
+
+Start of scheduling scc: [47]
+Scheduling [47] done 
+
+Start of scheduling scc: [48]
+Scheduling [48] done 
+
+Start of scheduling scc: [50]
+Scheduling [50] done 
+
+Start of scheduling scc: [51]
+Scheduling [51] done 
+
+Start of scheduling scc: [52]
+Scheduling [52] done 
+
+Start of scheduling scc: [53]
+Scheduling [53] done 
+
+Start of scheduling scc: [54]
+Scheduling [54] done 
+
+Start of scheduling scc: [55]
+Scheduling [55] done 
+
+Start of scheduling scc: [56]
+Scheduling [56] done 
+
+Start of scheduling scc: [57]
+Scheduling [57] done 
+
+Start of scheduling scc: [58]
+Scheduling [58] done 
+
+Start of scheduling scc: [59]
+Scheduling [59] done 
+
+Start of scheduling scc: [61]
+Scheduling [61] done 
+
+Start of scheduling scc: [63]
+Scheduling [63] done 
+
+Start of scheduling scc: [65]
+Scheduling [65] done 
+
+Start of scheduling scc: [66]
+Scheduling [66] done 
+
+Start of scheduling scc: [67]
+Scheduling [67] done 
+
+Start of scheduling scc: [68]
+Scheduling [68] done 
+
+Start of scheduling scc: [69]
+Scheduling [69] done 
+
+Start of scheduling scc: [70]
+Scheduling [70] done 
+
+Start of scheduling scc: [71]
+Scheduling [71] done 
+
+Start of scheduling scc: [72]
+Scheduling [72] done 
+
+Start of scheduling scc: [73]
+Scheduling [73] done 
+
+Start of scheduling scc: [74]
+Scheduling [74] done 
+
+Start of scheduling scc: [75]
+Scheduling [75] done 
+
+Start of scheduling scc: [76]
+Scheduling [76] done 
+
+Start of scheduling scc: [77]
+Scheduling [77] done 
+
+Start of scheduling scc: [78]
+Scheduling [78] done 
+
+Start of scheduling scc: [83]
+Scheduling [83] done 
+
+Start of scheduling scc: [84]
+Scheduling [84] done 
+
+Start of scheduling scc: [85]
+Scheduling [85] done 
+
+Start of scheduling scc: [86]
+Scheduling [86] done 
+
+Start of scheduling scc: [87]
+Scheduling [87] done 
+
+Start of scheduling scc: [88]
+Scheduling [88] done 
+
+Start of scheduling scc: [89]
+Scheduling [89] done 
+
+Start of scheduling scc: [90]
+Scheduling [90] done 
+
+Start of scheduling scc: [91]
+Scheduling [91] done 
+
+Start of scheduling scc: [92]
+Scheduling [92] done 
+
+Start of scheduling scc: [93]
+Scheduling [93] done 
+
+Start of scheduling scc: [94]
+Scheduling [94] done 
+
+Start of scheduling scc: [95]
+Scheduling [95] done 
+
+Start of scheduling scc: [96]
+Scheduling [96] done 
+
+Start of scheduling scc: [97]
+Scheduling [97] done 
+
+Start of scheduling scc: [98]
+Scheduling [98] done 
+
+Start of scheduling scc: [100]
+Scheduling [100] done 
+
+Start of scheduling scc: [107]
+Scheduling [107] done 
+
+Start of scheduling scc: [108]
+Scheduling [108] done 
+
+Start of scheduling scc: [109]
+Scheduling [109] done 
+
+Start of scheduling scc: [110]
+Scheduling [110] done 
+
+Start of scheduling scc: [111]
+Scheduling [111] done 
+
+Start of scheduling scc: [112]
+Scheduling [112] done 
+
+Start of scheduling scc: [113]
+Scheduling [113] done 
+
+Start of scheduling scc: [114]
+Scheduling [114] done 
+
+Start of scheduling scc: [115]
+Scheduling [115] done 
+
+Start of scheduling scc: [116]
+Scheduling [116] done 
+
+Start of scheduling scc: [117]
+Scheduling [117] done 
+
+Start of scheduling scc: [118]
+Scheduling [118] done 
+
+Start of scheduling scc: [119]
+Scheduling [119] done 
+
+Start of scheduling scc: [120]
+Scheduling [120] done 
+
+Start of scheduling scc: [121]
+Scheduling [121] done 
+
+Start of scheduling scc: [122]
+Scheduling [122] done 
+
+Start of scheduling scc: [123]
+Scheduling [123] done 
+
+Start of scheduling scc: [124]
+Scheduling [124] done 
+
+Start of scheduling scc: [125]
+Scheduling [125] done 
+
+Start of scheduling scc: [126]
+Scheduling [126] done 
+
+Start of scheduling scc: [127]
+Scheduling [127] done 
+
+Start of scheduling scc: [128]
+Scheduling [128] done 
+
+Start of scheduling scc: [129]
+Scheduling [129] done 
+
+Start of scheduling scc: [130]
+Scheduling [130] done 
+
+Start of scheduling scc: [131]
+Scheduling [131] done 
+
+Start of scheduling scc: [132]
+Scheduling [132] done 
+
+Start of scheduling scc: [133]
+Scheduling [133] done 
+
+Start of scheduling scc: [134]
+Scheduling [134] done 
+
+Start of scheduling scc: [135]
+Scheduling [135] done 
+
+Start of scheduling scc: [136]
+Scheduling [136] done 
+
+Start of scheduling scc: [137]
+Scheduling [137] done 
+
+Start of scheduling scc: [138]
+Scheduling [138] done 
+
+Start of scheduling scc: [139]
+Scheduling [139] done 
+
+Start of scheduling scc: [140]
+Scheduling [140] done 
+
+Start of scheduling scc: [141]
+Scheduling [141] done 
+
+Start of scheduling scc: [142]
+Scheduling [142] done 
+
+Start of scheduling scc: [143]
+Scheduling [143] done 
+
+Start of scheduling scc: [144]
+Scheduling [144] done 
+
+Start of scheduling scc: [145]
+Scheduling [145] done 
+
+Start of scheduling scc: [146]
+Scheduling [146] done 
+
+Start of scheduling scc: [147]
+Scheduling [147] done 
+
+Start of scheduling scc: [148]
+Scheduling [148] done 
+
+Start of scheduling scc: [99]
+Scheduling [99] done 
+
+Start of scheduling scc: [102]
+Scheduling [102] done 
+
+Start of scheduling scc: [104]
+Scheduling [104] done 
+
+Start of scheduling scc: [106]
+Scheduling [106] done 
+
+Start of scheduling scc: [101]
+Scheduling [101] done 
+
+Start of scheduling scc: [103]
+Scheduling [103] done 
+
+Start of scheduling scc: [105]
+Scheduling [105] done 
+
+Start of scheduling scc: [33]
+Scheduling [33] done 
+
+Start of scheduling scc: [49]
+Scheduling [49] done 
+
+Start of scheduling scc: [60]
+Scheduling [60] done 
+
+Start of scheduling scc: [79]
+Scheduling [79] done 
+
+Start of scheduling scc: [30]
+Scheduling [30] done 
+
+Start of scheduling scc: [62]
+Scheduling [62] done 
+
+Start of scheduling scc: [80]
+Scheduling [80] done 
+
+Start of scheduling scc: [31]
+Scheduling [31] done 
+
+Start of scheduling scc: [64]
+Scheduling [64] done 
+
+Start of scheduling scc: [81]
+Scheduling [81] done 
+
+Start of scheduling scc: [32]
+Scheduling [32] done 
+
+Start of scheduling scc: [82]
+Scheduling [82] done 
+
+Starting LNS... with mode Choice, <objective>
+
+0 min 1 sec - Found solution with better objective 30874659 by rescheduling [29] with <objective>
+0 min 1 sec - Found solution with better objective 30116391 by rescheduling [28, 27] with <objective>
+0 min 1 sec - Found solution with better objective 28897751 by rescheduling [26, 32, 31] with <objective>
+0 min 17 sec - Found solution with better objective 28220137 by rescheduling [30, 33, 49, 32] with <objective>
+0 min 18 sec - Found solution with same objective 28220137 by rescheduling [30, 32, 33] with objective
+0 min 19 sec - Found solution with better objective 27843248 by rescheduling [37, 68, 36, 42] with <resource_conflicted>
+Reset switch_mode_timer because of objective-improvement of at least 10%.
+0 min 21 sec - Found solution with better objective 26961456 by rescheduling [44, 86, 97, 48, 89] with <resource_conflicted>
+0 min 22 sec - Found solution with better objective 26268850 by rescheduling [48, 26, 87, 46, 41, 92] with <resource_conflicted>
+0 min 24 sec - Found solution with better objective 25681581 by rescheduling [46, 20, 25, 44, 59, 41, 43] with <resource_conflicted>
+0 min 25 sec - Found solution with better objective 24923949 by rescheduling [28, 62, 48, 42, 49, 16, 146, 56] with <resource_conflicted>
+Reset switch_mode_timer because of objective-improvement of at least 10%.
+0 min 27 sec - Found solution with better objective 23852031 by rescheduling [42, 79, 14, 13, 59, 81, 32, 61, 52] with <resource_conflicted>
+0 min 29 sec - Found solution with better objective 22805763 by rescheduling [50, 17, 58, 43, 32, 61, 57, 62, 19, 64] with <resource_conflicted>
+0 min 30 sec - Found solution with better objective 22167512 by rescheduling [80, 60, 71, 75, 10, 49, 33, 73, 0, 1, 2] with <resource_conflicted>
+Reset switch_mode_timer because of objective-improvement of at least 10%.
+0 min 32 sec - Found solution with same objective 22167512 by rescheduling [] with resource_conflicted
+0 min 32 sec - Found solution with better objective 20085217 by rescheduling [1, 147, 42, 71, 55, 148, 118, 15, 136, 27, 142, 121, 21] with <random>
+0 min 33 sec - Found solution with better objective 18773194 by rescheduling [110, 119, 108, 66, 122, 34, 6, 79, 73, 58, 36, 84, 94, 56] with <random>
+Reset switch_mode_timer because of objective-improvement of at least 10%.
+0 min 33 sec - Found solution with better objective 16406019 by rescheduling [52, 15, 91, 69, 85, 18, 143, 96, 93, 88, 115, 95, 130, 140, 134] with <random>
+Reset switch_mode_timer because of objective-improvement of at least 10%.
+0 min 34 sec - Found solution with better objective 15164699 by rescheduling [118, 99, 48, 108, 6, 72, 119, 32, 87, 75, 143, 147, 79, 56, 128, 24] with <random>
+0 min 35 sec - Found solution with better objective 13075834 by rescheduling [69, 50, 141, 77, 33, 132, 76, 104, 84, 45, 148, 86, 6, 117, 9, 17, 126] with <random>
+Reset switch_mode_timer because of objective-improvement of at least 10%.
+0 min 38 sec - Found solution with better objective 12142637 by rescheduling [42, 21, 116, 25, 129, 53, 8, 0, 26, 79, 90, 95, 22, 104, 18, 48, 10, 147] with <random>
+0 min 39 sec - Found solution with better objective 10505327 by rescheduling [35, 12, 92, 55, 63, 144, 90, 65, 117, 54, 123, 58, 122, 34, 32, 43, 48, 40, 127] with <random>
+Reset switch_mode_timer because of objective-improvement of at least 10%.
+0 min 39 sec - Found solution with better objective 9202552 by rescheduling [144, 139, 129, 3, 51, 94, 127, 97, 126, 102, 39, 99, 70, 13, 30, 108, 133, 87, 100, 22] with <random>
+Reset switch_mode_timer because of objective-improvement of at least 10%.
+0 min 40 sec - Found solution with better objective 8021315 by rescheduling [96, 22, 32, 139, 137, 21, 67, 6, 80, 34, 114, 94, 66, 107, 85, 78, 126, 53, 27, 5, 2] with <random>
+Reset switch_mode_timer because of objective-improvement of at least 10%.
+0 min 41 sec - Found solution with better objective 7399204 by rescheduling [49, 128, 48, 25, 112, 21, 31, 105, 135, 32, 137, 88, 14, 22, 121, 97, 20, 110, 13, 115, 89, 96] with <random>
+0 min 42 sec - Found solution with better objective 6042456 by rescheduling [111, 0, 60, 71, 5, 22, 99, 88, 54, 30, 94, 34, 35, 110, 87, 36, 23, 53, 120, 79, 7, 133, 126] with <random>
+Reset switch_mode_timer because of objective-improvement of at least 10%.
+0 min 43 sec - Found solution with better objective 5326068 by rescheduling [129, 89, 17, 108, 1, 118, 2, 21, 41, 95, 23, 10, 64, 54, 97, 30, 56, 67, 77, 44, 145, 25, 79, 45] with <random>
+Reset switch_mode_timer because of objective-improvement of at least 10%.
+0 min 43 sec - Found solution with better objective 3431311 by rescheduling [131, 43, 143, 124, 121, 147, 138, 109, 83, 90, 80, 148, 133, 65, 71, 44, 91, 130, 12, 105, 76, 101, 74, 144, 55] with <random>
+Reset switch_mode_timer because of objective-improvement of at least 10%.
+0 min 44 sec - Found solution with better objective 3261856 by rescheduling [112, 121, 74, 75, 20, 2, 142, 16, 106, 55, 116, 58, 56, 118, 82, 100, 134, 144, 33, 45, 120, 87, 3, 141, 123, 42] with <random>
+0 min 45 sec - Found solution with better objective 3084730 by rescheduling [112, 67, 76, 1, 39, 132, 32, 34, 53, 48, 146, 14, 20, 133, 108, 12, 72, 50, 102, 69, 125, 95, 0, 138, 13, 107, 91] with <random>
+Reset switch_mode_timer because of objective-improvement of at least 10%.
+0 min 46 sec - Found solution with better objective 2463073 by rescheduling [144, 4, 33, 44, 107, 93, 101, 81, 56, 142, 70, 121, 19, 126, 137, 37, 69, 23, 39, 141, 104, 119, 42, 77, 78, 79, 48, 38] with <random>
+Reset switch_mode_timer because of objective-improvement of at least 10%.
+0 min 51 sec - Found solution with better objective 1373440 by rescheduling [38, 96, 60, 74, 112, 144, 146, 71, 64, 105, 82, 14, 104, 103, 30, 43, 37, 111, 128, 113, 45, 73, 62, 139, 47, 44, 13, 11, 126] with <random>
+Reset switch_mode_timer because of objective-improvement of at least 10%.
+0 min 52 sec - Found solution with better objective 1030476 by rescheduling [74, 92, 138, 31, 137, 70, 106, 44, 128, 26, 114, 125, 30, 11, 61, 10, 73, 0, 40, 96, 2, 131, 123, 107, 68, 130, 146, 59, 89, 32] with <random>
+Reset switch_mode_timer because of objective-improvement of at least 10%.
+0 min 53 sec - Found solution with better objective 1028254 by rescheduling [25, 144, 29, 102, 123, 61, 13, 75, 77, 65, 66, 143, 99, 22, 40, 82, 115, 146, 85, 84, 74, 118, 24, 51, 86, 111, 31, 3, 52, 76, 48] with <random>
+0 min 54 sec - Found solution with better objective 555377 by rescheduling [57, 10, 142, 40, 88, 32, 46, 93, 73, 33, 147, 84, 76, 138, 109, 121, 74, 17, 123, 119, 26, 100, 144, 4, 104, 114, 35, 77, 20, 103, 106, 6] with <random>
+Reset switch_mode_timer because of objective-improvement of at least 10%.
+0 min 55 sec - Found solution with better objective 33977 by rescheduling [11, 27, 30, 90, 49, 56, 106, 122, 111, 96, 145, 23, 121, 129, 69, 63, 126, 55, 74, 76, 52, 19, 79, 101, 57, 148, 115, 12, 91, 66, 7, 9, 146] with <random>
+Reset switch_mode_timer because of objective-improvement of at least 10%.
+0 min 57 sec - Found solution with better objective 33431 by rescheduling [6, 18, 34, 8, 143, 55, 41, 78, 67, 110, 54, 124, 115, 4, 47, 74, 146, 104, 51, 100, 65, 140, 92, 23, 119, 43, 75, 16, 37, 79, 22, 20, 13, 71] with <random>
+0 min 58 sec - Found solution with better objective 33381 by rescheduling [38, 65, 114, 116, 142, 22, 106, 127, 27, 109, 100, 66, 108, 31, 129, 138, 140, 8, 57, 82, 112, 21, 54, 39, 6, 74, 40, 136, 0, 117, 145, 1, 29, 107, 120] with <random>
+0 min 59 sec - Found solution with better objective 33290 by rescheduling [68, 47, 134, 132, 119, 7, 86, 139, 136, 63, 30, 128, 79, 117, 35, 13, 51, 67, 70, 26, 49, 145, 141, 93, 98, 81, 29, 71, 53, 41, 99, 85, 0, 32, 56, 45] with <random>
+1 min 0 sec - Found solution with better objective 32174 by rescheduling [54, 147, 58, 86, 65, 124, 51, 16, 106, 35, 98, 75, 93, 14, 77, 60, 122, 111, 39, 125, 115, 83, 137, 113, 2, 91, 19, 101, 140, 61, 29, 67, 131, 80, 42, 31, 21] with <random>
+1 min 1 sec - Found solution with same objective 32174 by rescheduling [3, 47, 65, 83, 13, 6, 25, 86, 78, 42, 36, 116, 110, 40, 27, 69, 124, 97, 50, 54, 118, 43, 9, 80, 67, 134, 127, 85, 135, 87, 126, 99, 55, 121, 37, 82, 142, 79] with random
+1 min 9 sec - Found solution with better objective 30957 by rescheduling [28, 15, 5, 94, 72, 95, 133, 62, 64, 105, 44, 59, 89, 130, 24, 48, 102, 10, 17, 33, 46, 73, 84, 88, 103, 123, 144, 11, 12, 52, 76, 90, 96, 148, 4, 18, 20, 23, 34] with <longest_unused>
+1 min 10 sec - Found solution with better objective 29877 by rescheduling [92, 104, 143, 146, 1, 8, 22, 38, 57, 66, 74, 100, 107, 108, 109, 112, 114, 120, 129, 138, 0, 7, 26, 30, 32, 41, 45, 49, 53, 56, 63, 68, 70, 71, 81, 117, 119, 128, 132, 136] with <longest_unused>
+Reset switch_mode_timer because of objective-improvement of at least 10%.
+1 min 11 sec - Found solution with better objective 27158 by rescheduling [139, 141, 145, 2, 14, 16, 19, 21, 29, 31, 35, 39, 51, 58, 60, 61, 75, 77, 91, 93, 98, 101, 106, 111, 113, 115, 122, 125, 131, 137, 140, 147, 3, 6, 9, 13, 25, 27, 36, 37, 40] with <longest_unused>
+1 min 12 sec - Found solution with better objective 24119 by rescheduling [42, 43, 47, 50, 54, 55, 65, 67, 69, 78, 79, 80, 82, 83, 85, 86, 87, 97, 99, 110, 116, 118, 121, 124, 126, 127, 134, 135, 142, 4, 5, 10, 11, 12, 15, 17, 18, 20, 23, 24, 28, 33] with <longest_unused>
+Reset switch_mode_timer because of objective-improvement of at least 10%.
+1 min 13 sec - Found solution with better objective 19375 by rescheduling [34, 44, 46, 48, 52, 59, 62, 64, 72, 73, 76, 84, 88, 89, 90, 94, 95, 96, 102, 103, 105, 123, 130, 133, 144, 148, 0, 1, 7, 8, 22, 26, 30, 32, 38, 41, 45, 49, 53, 56, 57, 63, 66] with <longest_unused>
+Reset switch_mode_timer because of objective-improvement of at least 10%.
+1 min 15 sec - Found solution with better objective 17838 by rescheduling [68, 70, 71, 74, 81, 92, 100, 104, 107, 108, 109, 112, 114, 117, 119, 120, 128, 129, 132, 136, 138, 143, 146, 2, 3, 6, 9, 13, 14, 16, 19, 21, 25, 27, 29, 31, 35, 36, 37, 39, 40, 51, 58, 60] with <longest_unused>
+1 min 16 sec - Found solution with same objective 17838 by rescheduling [61, 75, 77, 91, 93, 98, 101, 106, 111, 113, 115, 122, 125, 131, 137, 139, 140, 141, 145, 147, 4, 5, 10, 11, 12, 15, 17, 18, 20, 23, 24, 28, 33, 42, 43, 47, 50, 54, 55, 65, 67, 69, 78, 79, 80] with longest_unused
+1 min 24 sec - Found solution with better objective 4698 by rescheduling [30, 32, 78, 49, 14, 62, 71, 72, 38, 64, 81, 31, 12, 23, 25, 80, 24, 8, 0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 13, 15, 16, 17, 18, 19, 20, 21, 22, 26, 27, 28, 29, 33, 34, 35, 36] with <objective>
+Reset switch_mode_timer because of objective-improvement of at least 10%.
+1 min 26 sec - Found solution with better objective 4380 by rescheduling [78, 49, 14, 71, 72, 38, 24, 8, 0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12, 13, 15, 16, 17, 18, 19, 20, 21, 22, 23, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 39, 40, 41, 42] with <objective>
+1 min 29 sec - Found solution with same objective 4380 by rescheduling [78, 49, 14, 71, 72, 8, 0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12, 13, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43] with objective
+1 min 30 sec - Found solution with same objective 4380 by rescheduling [] with resource_conflicted
+1 min 31 sec - Found solution with same objective 4380 by rescheduling [146, 69, 8, 105, 121, 7, 114, 73, 35, 85, 113, 16, 92, 19, 117, 33, 106, 4, 37, 96, 27, 47, 77, 91, 116, 112, 15, 95, 101, 42, 54, 99, 93, 36, 61, 41, 103, 119, 107, 145, 26, 5, 83, 23, 58, 65, 148, 102, 29, 49] with random
+1 min 32 sec - Found solution with same objective 4380 by rescheduling [82, 86, 87, 97, 110, 118, 124, 126, 127, 134, 135, 142, 44, 45, 46, 48, 52, 53, 56, 57, 59, 63, 66, 76, 84, 88, 89, 90, 94, 123, 130, 133, 144, 51, 60, 68, 70, 74, 100, 104, 108, 109, 120, 128, 129, 132, 136, 138, 143, 50, 55] with longest_unused
+1 min 35 sec - Found solution with better objective 3114 by rescheduling [78, 49, 14, 71, 72, 8, 0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12, 13, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47] with <objective>
+Reset switch_mode_timer because of objective-improvement of at least 10%.
+1 min 38 sec - Found solution with same objective 3114 by rescheduling [78, 49, 71, 72, 8, 0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48] with objective
+1 min 39 sec - Found solution with same objective 3114 by rescheduling [] with resource_conflicted
+1 min 48 sec - Found solution with better objective 2923 by rescheduling [48, 133, 112, 20, 49, 129, 86, 54, 140, 14, 99, 52, 131, 130, 47, 67, 77, 95, 76, 139, 137, 23, 9, 114, 87, 74, 62, 89, 26, 36, 83, 78, 136, 81, 18, 119, 105, 4, 118, 116, 8, 72, 46, 134, 82, 24, 1, 41, 66, 11, 10, 96, 50, 124, 28] with <random>
+1 min 50 sec - Found solution with better objective 2556 by rescheduling [64, 84, 5, 127, 81, 51, 42, 67, 56, 48, 8, 72, 60, 69, 9, 97, 80, 74, 55, 62, 129, 92, 102, 63, 78, 110, 79, 13, 86, 130, 0, 21, 41, 122, 11, 88, 18, 96, 119, 1, 108, 124, 33, 15, 111, 139, 113, 6, 145, 83, 50, 76, 112, 57, 44, 126] with <random>
+Reset switch_mode_timer because of objective-improvement of at least 10%.
+1 min 51 sec - Found solution with better objective 1445 by rescheduling [63, 9, 77, 101, 6, 39, 26, 31, 19, 93, 66, 106, 136, 34, 36, 85, 78, 60, 64, 96, 27, 24, 94, 124, 82, 129, 69, 132, 2, 58, 10, 5, 52, 113, 4, 99, 21, 43, 49, 110, 145, 1, 97, 13, 3, 62, 121, 57, 51, 17, 144, 104, 139, 72, 143, 50, 65] with <random>
+Reset switch_mode_timer because of objective-improvement of at least 10%.
+1 min 52 sec - Found solution with better objective 388 by rescheduling [84, 89, 67, 15, 55, 83, 4, 94, 51, 6, 116, 131, 72, 109, 57, 33, 134, 108, 71, 25, 56, 80, 113, 91, 0, 78, 115, 59, 43, 144, 112, 147, 60, 62, 90, 148, 44, 92, 28, 105, 40, 77, 64, 21, 3, 53, 54, 100, 63, 88, 22, 135, 128, 76, 95, 34, 39, 85] with <random>
+Reset switch_mode_timer because of objective-improvement of at least 10%.
+1 min 54 sec - Found solution with same objective 388 by rescheduling [66, 41, 51, 76, 103, 74, 101, 75, 140, 37, 78, 15, 130, 1, 60, 86, 115, 93, 64, 22, 108, 32, 48, 2, 111, 148, 91, 3, 135, 47, 89, 104, 129, 100, 50, 55, 5, 126, 34, 0, 33, 23, 28, 45, 8, 134, 107, 7, 90, 144, 62, 136, 83, 26, 24, 120, 6, 92, 21] with random
+1 min 55 sec - Found solution with better objective 363 by rescheduling [98, 125, 141, 61, 73, 117, 146, 68, 70, 123, 138, 142, 12, 16, 29, 30, 35, 38, 14, 20, 46, 87, 114, 118, 133, 137, 11, 18, 42, 79, 81, 102, 119, 122, 127, 9, 10, 13, 17, 19, 27, 31, 36, 49, 52, 58, 65, 69, 82, 96, 97, 99, 106, 110, 121, 124, 132, 139, 143, 145] with <longest_unused>
+1 min 57 sec - Found solution with objective 0.
+LNS iteration-count: count(63)

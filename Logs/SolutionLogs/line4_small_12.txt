@@ -1,0 +1,167 @@
+Start of scheduling scc: [2]
+Scheduling [2] done 
+
+Start of scheduling scc: [0, 1, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+Iteration 1 - to schedule: [13] --- scheduled: [] --- unscheduled: [0, 1, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+Iteration 2 - to schedule: [7] --- scheduled: [13] --- unscheduled: [0, 1, 3, 4, 6, 7, 8, 9, 10, 11, 12, 14]
+Iteration 3 - to schedule: [12] --- scheduled: [13, 7] --- unscheduled: [0, 1, 3, 4, 6, 8, 9, 10, 11, 12, 14]
+Iteration 4 - to schedule: [9] --- scheduled: [13, 7, 12] --- unscheduled: [0, 1, 3, 4, 6, 8, 9, 10, 11, 14]
+Iteration 5 - to schedule: [14] --- scheduled: [13, 7, 12, 9] --- unscheduled: [0, 1, 3, 4, 6, 8, 10, 11, 14]
+Iteration 6 - to schedule: [11] --- scheduled: [13, 7, 12, 9, 14] --- unscheduled: [0, 1, 3, 4, 6, 8, 10, 11]
+Iteration 7 - to schedule: [10] --- scheduled: [13, 12, 9, 14, 11] --- unscheduled: [0, 1, 3, 4, 6, 8, 10, 7]
+Iteration 8 - to schedule: [0] --- scheduled: [13, 12, 9, 14, 11, 10] --- unscheduled: [0, 1, 3, 4, 6, 8, 7]
+Iteration 9 - to schedule: [4] --- scheduled: [13, 12, 9, 14, 11, 10, 0] --- unscheduled: [1, 3, 4, 6, 8, 7]
+Iteration 10 - to schedule: [1] --- scheduled: [13, 12, 9, 14, 11, 10, 0, 4] --- unscheduled: [1, 3, 6, 8, 7]
+Iteration 11 - to schedule: [6] --- scheduled: [13, 12, 9, 14, 11, 10, 0, 4, 1] --- unscheduled: [3, 6, 8, 7]
+Iteration 12 - to schedule: [7] --- scheduled: [13, 12, 9, 14, 11, 10, 0, 4, 1, 6] --- unscheduled: [3, 8, 7]
+Iteration 13 - to schedule: [8] --- scheduled: [13, 12, 9, 14, 11, 10, 0, 4, 1, 6, 7] --- unscheduled: [3, 8]
+Iteration 14 - to schedule: [3] --- scheduled: [13, 12, 9, 14, 11, 10, 0, 4, 1, 6, 7, 8] --- unscheduled: [3]
+Scheduling [0, 1, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14] done 
+
+Start of scheduling scc: [5]
+Scheduling [5] done 
+
+Start of scheduling scc: [15]
+Scheduling [15] done 
+
+Start of scheduling scc: [16]
+Scheduling [16] done 
+
+Start of scheduling scc: [17]
+Scheduling [17] done 
+
+Start of scheduling scc: [18]
+Scheduling [18] done 
+
+Start of scheduling scc: [19]
+Scheduling [19] done 
+
+Start of scheduling scc: [20]
+Scheduling [20] done 
+
+Start of scheduling scc: [21]
+Scheduling [21] done 
+
+Start of scheduling scc: [22]
+Scheduling [22] done 
+
+Start of scheduling scc: [24]
+Scheduling [24] done 
+
+Start of scheduling scc: [25]
+Scheduling [25] done 
+
+Start of scheduling scc: [26]
+Scheduling [26] done 
+
+Start of scheduling scc: [27]
+Scheduling [27] done 
+
+Start of scheduling scc: [28]
+Scheduling [28] done 
+
+Start of scheduling scc: [29]
+Scheduling [29] done 
+
+Start of scheduling scc: [23]
+Scheduling [23] done 
+
+Starting LNS... with mode Choice, <objective>
+
+0 min 56 sec - Found solution with better objective 3935952 by rescheduling [23] with <objective>
+Reset switch_mode_timer because of objective-improvement of at least 10%.
+1 min 11 sec - Found solution with better objective 3103598 by rescheduling [29, 28] with <objective>
+Reset switch_mode_timer because of objective-improvement of at least 10%.
+1 min 11 sec - Found solution with better objective 2746175 by rescheduling [27] with <objective>
+Reset switch_mode_timer because of objective-improvement of at least 10%.
+1 min 11 sec - Found solution with better objective 2190985 by rescheduling [26, 25] with <objective>
+Reset switch_mode_timer because of objective-improvement of at least 10%.
+1 min 11 sec - Found solution with better objective 1526036 by rescheduling [24, 22, 21] with <objective>
+Reset switch_mode_timer because of objective-improvement of at least 10%.
+1 min 12 sec - Found solution with better objective 1096883 by rescheduling [20, 19, 18, 26] with <objective>
+Reset switch_mode_timer because of objective-improvement of at least 10%.
+1 min 27 sec - Found solution with better objective 1001620 by rescheduling [26, 16, 17, 21, 15] with <objective>
+1 min 42 sec - Found solution with same objective 1001620 by rescheduling [16, 26, 17, 15] with objective
+1 min 43 sec - Found solution with better objective 998730 by rescheduling [23, 20, 12] with <resource_conflicted>
+1 min 44 sec - Found solution with same objective 998730 by rescheduling [9, 2, 20, 21] with resource_conflicted
+1 min 44 sec - Found solution with better objective 993054 by rescheduling [13, 3, 17, 19, 4] with <random>
+1 min 45 sec - Found solution with better objective 990594 by rescheduling [24, 6, 10, 22, 21, 5] with <random>
+1 min 45 sec - Found solution with better objective 990559 by rescheduling [18, 17, 26, 12, 0, 3, 25] with <random>
+1 min 52 sec - Found solution with better objective 933690 by rescheduling [20, 22, 25, 11, 10, 24, 0, 14] with <random>
+Reset switch_mode_timer because of objective-improvement of at least 10%.
+1 min 56 sec - Found solution with better objective 925633 by rescheduling [14, 10, 0, 28, 13, 11, 9, 1, 2] with <random>
+2 min 12 sec - Found solution with better objective 874549 by rescheduling [25, 20, 27, 18, 28, 8, 6, 16, 4, 5] with <random>
+2 min 12 sec - Found solution with better objective 852562 by rescheduling [2, 5, 6, 8, 19, 0, 11, 24, 7] with <random>
+2 min 27 sec - Found solution with better objective 833594 by rescheduling [12, 14, 13, 9, 24, 22, 18, 7, 21, 3] with <random>
+Reset switch_mode_timer because of objective-improvement of at least 10%.
+2 min 42 sec - Found solution with better objective 831456 by rescheduling [14, 9, 11, 8, 0, 16, 3, 21, 4] with <random>
+2 min 42 sec - Found solution with better objective 821490 by rescheduling [2, 12, 18, 16, 0, 17, 26, 7] with <random>
+2 min 57 sec - Found solution with better objective 765608 by rescheduling [29, 25, 16, 17, 12, 22, 0, 11, 14] with <random>
+2 min 58 sec - Found solution with better objective 710195 by rescheduling [2, 24, 5, 4, 10, 9, 16, 26] with <random>
+Reset switch_mode_timer because of objective-improvement of at least 10%.
+3 min 12 sec - Found solution with better objective 706489 by rescheduling [5, 4, 18, 29, 24, 7, 3, 15, 16] with <random>
+3 min 12 sec - Found solution with better objective 695384 by rescheduling [2, 16, 28, 25, 4, 11, 1, 26] with <random>
+3 min 27 sec - Found solution with worse objective after rescheduling [24, 4, 2, 12, 27, 9, 18, 15, 19] with random. Discarding solution.
+3 min 28 sec - Found solution with better objective 685230 by rescheduling [23, 20, 6, 13, 8, 21, 0] with <longest_unused>
+3 min 43 sec - Found solution with better objective 603930 by rescheduling [14, 17, 22, 10, 3, 5, 7, 29] with <longest_unused>
+Reset switch_mode_timer because of objective-improvement of at least 10%.
+3 min 43 sec - Found solution with better objective 599062 by rescheduling [1, 11, 16, 25, 26, 28, 2] with <longest_unused>
+3 min 50 sec - Found solution with better objective 583941 by rescheduling [4, 9, 12, 15, 18, 19, 24, 27] with <longest_unused>
+3 min 50 sec - Found solution with better objective 581795 by rescheduling [0, 6, 8, 13, 20, 21, 23, 3, 5] with <longest_unused>
+4 min 6 sec - Found solution with better objective 578540 by rescheduling [7, 10, 14, 17, 22, 29, 1, 2, 11, 16] with <longest_unused>
+4 min 12 sec - Found solution with better objective 574440 by rescheduling [25, 26, 28, 4, 9, 12, 15, 18, 19] with <longest_unused>
+4 min 12 sec - Found solution with better objective 568044 by rescheduling [24, 27, 0, 3, 5, 6, 8, 13, 20, 21] with <longest_unused>
+4 min 27 sec - Found solution with better objective 566594 by rescheduling [23, 1, 2, 7, 10, 11, 14, 16, 17, 22, 29] with <longest_unused>
+4 min 37 sec - Found solution with better objective 563396 by rescheduling [4, 9, 12, 15, 18, 19, 25, 26, 28, 0] with <longest_unused>
+4 min 37 sec - Found solution with better objective 560825 by rescheduling [3, 5, 6, 8, 13, 20, 21, 24, 27, 1, 2] with <longest_unused>
+4 min 52 sec - Found solution with better objective 558316 by rescheduling [7, 10, 11, 14, 16, 17, 22, 23, 29, 0, 4, 9] with <longest_unused>
+Switch mode to Semi-fixed
+4 min 52 sec - Found solution with better objective 553368 by rescheduling [12] with <longest_unused>
+4 min 59 sec - Found solution with better objective 499321 by rescheduling [15, 18] with <longest_unused>
+Reset switch_mode_timer because of objective-improvement of at least 10%.
+5 min 4 sec - Found solution with better objective 421132 by rescheduling [19, 25, 26] with <longest_unused>
+Reset switch_mode_timer because of objective-improvement of at least 10%.
+5 min 9 sec - Found solution with better objective 400397 by rescheduling [28, 1, 2, 3] with <longest_unused>
+5 min 24 sec - Found solution with better objective 326954 by rescheduling [5, 6, 8, 13, 20] with <longest_unused>
+Reset switch_mode_timer because of objective-improvement of at least 10%.
+5 min 39 sec - Found solution with better objective 255575 by rescheduling [21, 24, 27, 0] with <longest_unused>
+Reset switch_mode_timer because of objective-improvement of at least 10%.
+5 min 40 sec - Found solution with better objective 252325 by rescheduling [4, 7, 9] with <longest_unused>
+5 min 40 sec - Found solution with better objective 249111 by rescheduling [10, 11, 14, 16] with <longest_unused>
+5 min 55 sec - Found solution with better objective 216244 by rescheduling [17, 22, 23, 29, 12] with <longest_unused>
+Reset switch_mode_timer because of objective-improvement of at least 10%.
+5 min 56 sec - Found solution with better objective 205099 by rescheduling [15, 18, 19, 25] with <longest_unused>
+5 min 57 sec - Found solution with better objective 204957 by rescheduling [26, 1, 2, 3, 28] with <longest_unused>
+6 min 12 sec - Found solution with better objective 194884 by rescheduling [5, 6, 8, 13, 20, 0] with <longest_unused>
+6 min 28 sec - Found solution with better objective 181655 by rescheduling [21, 24, 27, 4, 7] with <longest_unused>
+Reset switch_mode_timer because of objective-improvement of at least 10%.
+6 min 28 sec - Found solution with better objective 181423 by rescheduling [9, 10, 11, 14] with <longest_unused>
+6 min 44 sec - Found solution with better objective 176119 by rescheduling [16, 12, 17, 22, 23] with <longest_unused>
+6 min 45 sec - Found solution with better objective 172566 by rescheduling [29, 15, 18, 19] with <longest_unused>
+6 min 45 sec - Found solution with better objective 172564 by rescheduling [25, 1, 2, 3, 26] with <longest_unused>
+7 min 1 sec - Found solution with better objective 168542 by rescheduling [28, 0, 5, 6, 8, 13] with <longest_unused>
+7 min 16 sec - Found solution with better objective 152572 by rescheduling [20, 4, 7, 21, 24] with <longest_unused>
+Reset switch_mode_timer because of objective-improvement of at least 10%.
+7 min 16 sec - Found solution with better objective 151291 by rescheduling [27, 9, 10, 11] with <longest_unused>
+7 min 32 sec - Found solution with better objective 149263 by rescheduling [14, 12, 16, 17, 22] with <longest_unused>
+7 min 32 sec - Found solution with better objective 149046 by rescheduling [23, 15, 18, 19] with <longest_unused>
+7 min 36 sec - Found solution with better objective 145497 by rescheduling [29, 1, 2, 3, 25] with <longest_unused>
+7 min 51 sec - Found solution with better objective 144724 by rescheduling [26, 0, 5, 6, 8, 13] with <longest_unused>
+8 min 6 sec - Found solution with better objective 144710 by rescheduling [28, 4, 7, 20, 21] with <longest_unused>
+8 min 7 sec - Found solution with better objective 144610 by rescheduling [24, 9, 10, 11] with <longest_unused>
+8 min 23 sec - Found solution with better objective 144596 by rescheduling [27, 12, 14, 16, 17] with <longest_unused>
+Switch mode to Choice
+8 min 23 sec - Found solution with better objective 144570 by rescheduling [22, 15, 18, 19, 23, 1, 2, 3, 25, 29, 0] with <longest_unused>
+Model is unknown. Returning the old solution.
+8 min 38 sec - Found solution with same objective 144570 by rescheduling [5, 6, 8, 13, 26, 4, 7, 20, 21, 28, 9, 10] with longest_unused
+8 min 43 sec - Found solution with better objective 140950 by rescheduling [27, 21, 24, 20, 16, 28, 26, 15, 22, 0, 7] with <objective>
+8 min 47 sec - Found solution with better objective 140936 by rescheduling [27, 21, 24, 20, 16, 28, 26, 15, 22, 0, 7, 12] with <objective>
+8 min 53 sec - Found solution with better objective 140097 by rescheduling [27, 21, 24, 20, 16, 28, 26, 15, 22, 0, 7, 12, 6] with <objective>
+9 min 8 sec - Found solution with better objective 139725 by rescheduling [27, 21, 24, 20, 16, 28, 26, 15, 22, 7, 12, 0, 6, 17] with <objective>
+9 min 19 sec - Found solution with same objective 139725 by rescheduling [27, 21, 24, 20, 16, 26, 28, 15, 22, 7, 12, 0, 6] with objective
+9 min 26 sec - Found solution with better objective 138518 by rescheduling [26, 0, 21, 22, 29, 25, 13, 24, 5, 8, 15, 4] with <resource_conflicted>
+Switch mode to Semi-fixed
+9 min 42 sec - Found solution with better objective 131352 by rescheduling [27, 19, 29, 20] with <resource_conflicted>
+9 min 44 sec - Found solution with better objective 131207 by rescheduling [15, 12, 6] with <resource_conflicted>
+9 min 59 sec - Found solution with same objective 131207 by rescheduling [28, 21, 23, 4] with resource_conflicted
+LNS iteration-count: count(75)

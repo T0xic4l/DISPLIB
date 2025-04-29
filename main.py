@@ -1,4 +1,5 @@
 import argparse, json, os, time, logging, subprocess, sys
+import slurminade
 
 from copy import deepcopy
 from data import Instance
@@ -43,47 +44,46 @@ def parse_instance(instance):
 
     return Instance(instance["trains"], instance["objective"])
 
-
-def main():
+@slurminade.slurmify()
+def main(instance_path, time_limit, checkproperties, heuristicsol, debug):
     start = time.perf_counter()
-    time_limit = args.timelimit
     try:
-        with open(os.path.join("Instances", args.instance), 'r') as file:
+        with open(os.path.join("Instances", instance_path), 'r') as file:
             instance = json.load(file)
     except FileNotFoundError:
-        print(f"File {args.instance} was not found")
+        print(f"File {instance_path} was not found")
         return
 
     instance = parse_instance(instance)
 
-    if args.checkproperties:
+    if checkproperties:
         memory_handler = setup_logger()
-        flush_logs_to_file(memory_handler, f"Logs/Properties/{args.instance}")
-        check_properties(instance, args.instance)
+        flush_logs_to_file(memory_handler, f"Logs/Properties/{instance_path}")
+        check_properties(instance, instance_path)
     else:
         memory_handler = setup_logger()
-        sol = solve_instance(instance, time_limit, (time.perf_counter()-start))
+        sol = solve_instance(instance, time_limit, (time.perf_counter()-start), heuristicsol, instance_path, debug)
 
-        solution_written = write_solution_to_file(f"Solutions/10min_sol_{args.instance}", calculate_objective_value(instance.objectives, sol), sol)
+        solution_written = write_solution_to_file(f"Solutions/10min_sol_{instance_path}", calculate_objective_value(instance.objectives, sol), sol)
         if solution_written:
-            flush_logs_to_file(memory_handler, f"Logs/SolutionLogs/{os.path.splitext(args.instance)[0] + ".txt"}")
-            if subprocess.run(f"python displib_verify.py Instances/{args.instance} Solutions/10min_sol_{args.instance}", shell=True, capture_output=True).returncode:
+            flush_logs_to_file(memory_handler, f"Logs/SolutionLogs/{os.path.splitext(instance_path)[0] + ".txt"}")
+            if subprocess.run(f"python displib_verify.py Instances/{instance_path} Solutions/10min_sol_{instance_path}", shell=True, capture_output=True).returncode:
                 logging.error("Final solution is not valid.")
             else:
                 logging.info("Final solution is valid")
 
 
-def solve_instance(instance, time_limit, time_passed):
+def solve_instance(instance, time_limit, time_passed, heuristicsol, instance_path, debug):
     start = time.perf_counter()
     res_eval, train_to_res = count_resource_appearances(instance.trains)
 
     with TimeLogger("Calculating heuristic solution - "):
         h_result = Heuristic(deepcopy(instance), res_eval, train_to_res).schedule()
 
-    if args.heuristicsol:
-        write_solution_to_file(f"HeuristicSolutions/hsol_{args.instance}", calculate_objective_value(instance.objectives, h_result["solution"]), h_result["solution"])
-        if args.debug:
-            if subprocess.run(f"python displib_verify.py Instances/{args.instance} HeuristicSolutions/hsol_{args.instance}", shell=True, capture_output=True).returncode:
+    if heuristicsol:
+        write_solution_to_file(f"HeuristicSolutions/hsol_{instance_path}", calculate_objective_value(instance.objectives, h_result["solution"]), h_result["solution"])
+        if debug:
+            if subprocess.run(f"python displib_verify.py Instances/{instance_path} HeuristicSolutions/hsol_{instance_path}", shell=True, capture_output=True).returncode:
                 logging.error("Heuristic solution is not valid.")
                 sys.exit(1)
     return LnsCoordinator(instance, h_result, res_eval, train_to_res, time_limit, time.perf_counter() - start).solve()
@@ -154,11 +154,20 @@ def calculate_objective_value(objectives, solution):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(prog="DISPLIB-Solver", description="By Lina Breuer and Elias Kaiser")
-    parser.add_argument('instance', help="Filename of the instance that needs to be solved. The solution of the instance will be saved in Solutions/ as sol_<instance>. The instance has to be located in Instances/", type=str)
+    # parser.add_argument('instance', help="Filename of the instance that needs to be solved. The solution of the instance will be saved in Solutions/ as sol_<instance>. The instance has to be located in Instances/", type=str)
     parser.add_argument('--timelimit', type=int, default=600, help="The time-limit in which the solution for the instance has to be calculated.")
     parser.add_argument('--checkproperties', action='store_true', help='Check for properties.')
-    parser.add_argument('--debug', action='store_true', help='Activates debug-mode.')
     parser.add_argument('--heuristicsol', action='store_true', help='Print heuristic solution to file.')
+    parser.add_argument('--debug', action='store_true', help='Activates debug-mode.')
     args = parser.parse_args()
-    main()
-
+    slurminade.update_default_configuration(
+        partition="alg",
+        exclusive=True,
+        mail_type="FAIL",
+        mail_user="elias.kaiser@tu-braunschweig.de",
+        cpus_per_task=8,
+        mem=32_000
+    )
+        # (instance_path, time_limit, checkproperties, heuristicsol, debug):
+    for instance_path in [f for f in os.listdir("Instances") if f.endswith(".json")]:
+        main.distribute(instance_path, args.timelimit, args.checkproperties, args.heuristicsol, args.debug)

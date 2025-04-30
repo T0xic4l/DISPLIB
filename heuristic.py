@@ -412,10 +412,14 @@ class Heuristic:
             unscheduled_trains = scc.copy()
 
             if len(scc) == 1:
-                feasible_solution[scc[0]] = self.schedule_single_train(scc[0], scc_start)
-                if not TrainSolver(self.instance, feasible_solution, scheduled_sccs, scc, scc_resource_evaluation, [], self.train_to_res, 0, True).solve():
-                    logging.warning(f"Could not schedule Train {scc[0]} with the solver. Scheduling it sequentially instead")
+                if self.restricted_trains_to_path.get(scc[0]) is not None:
                     feasible_solution[scc[0]] = self.schedule_single_train(scc[0], scc_start)
+                    if not TrainSolver(self.instance, feasible_solution, scheduled_sccs, [], scc_resource_evaluation, scc, self.train_to_res, 0, True).solve():
+                        logging.warning(f"Could not schedule Train {scc[0]} with the solver. Scheduling it sequentially instead")
+                else:
+                    if not TrainSolver(self.instance, feasible_solution, scheduled_sccs, scc, scc_resource_evaluation, [], self.train_to_res, 0, True).solve():
+                        logging.warning(f"Could not schedule Train {scc[0]} with the solver. Scheduling it sequentially instead")
+                        feasible_solution[scc[0]] = self.schedule_single_train(scc[0], scc_start)
             else:
                 counter = count(start=1, step=1)
 

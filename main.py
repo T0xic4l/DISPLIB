@@ -93,7 +93,7 @@ def solve_instance(original_instance, instance, time_limit, time_passed, heurist
         h_result = Heuristic(deepcopy(instance), res_eval, train_to_res).schedule()
 
     if heuristicsol:
-        write_solution_to_file(f"HeuristicSolutions/hsol_{instance_path}", calculate_objective_value(instance.objectives, h_result["solution"]), h_result["solution"])
+        write_solution_to_file(f"HeuristicSolutions/hsol_{instance_path}", calculate_objective_value(instance.objectives, h_result["solution"]), h_result["solution"], True)
         if debug:
             if subprocess.run(f"python displib_verify.py Instances/{instance_path} HeuristicSolutions/hsol_{instance_path}", shell=True, capture_output=True).returncode:
                 logging.error("Heuristic solution is not valid.")
@@ -142,8 +142,8 @@ def count_resource_appearances(trains):
     return resource_appearances, train_to_resources
 
 
-def write_solution_to_file(filename, objective, solution):
-    if os.path.exists(filename):
+def write_solution_to_file(filename, objective, solution, force=False):
+    if os.path.exists(filename) and not force:
         with open(filename, 'r') as file:
             try:
                 prev_solution = json.load(file)
@@ -157,6 +157,7 @@ def write_solution_to_file(filename, objective, solution):
     with open(filename, 'w') as file:
         json.dump({"objective_value": objective, "events": EventSorter(deepcopy(solution)).events}, file)
         return True
+
 
 def calculate_objective_value(objectives, solution):
     return sum(obj["coeff"] * max(0, solution[obj["train"]][obj["operation"]]["start"] - obj["threshold"])

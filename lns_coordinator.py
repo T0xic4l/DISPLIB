@@ -74,7 +74,8 @@ class LnsCoordinator:
                     choice = strategy_functions[strategy](mode_sizes[mode])
 
             now = time()
-            new_feasible_sol = LnsDisplibSolver(self.instance, self.feasible_sol, choice, semi_fixed, deepcopy(self.train_to_resources), min(time_limit, self.calculate_remaining_time() - 1), mode == 2).solve()
+            solver = LnsDisplibSolver(self.instance, self.feasible_sol, choice, semi_fixed, deepcopy(self.train_to_resources), min(time_limit, self.calculate_remaining_time() - 1), mode == 2)
+            new_feasible_sol = solver.solve()
 
             for train in range(len(self.instance.trains)):
                 if train in choice + semi_fixed:
@@ -82,7 +83,6 @@ class LnsCoordinator:
                 else:
                     self.unused_turns[train] += 1
 
-            worse_solution = False
             new_objective_value = calculate_objective_value(self.instance.objectives, new_feasible_sol)
             at_min, at_sec = divmod(round(time() - self.start_time + self.time_passed), 60)
             if new_objective_value == 0:
@@ -112,10 +112,9 @@ class LnsCoordinator:
                 logging.warning(f"{at_min} min {at_sec} sec - Found solution with worse objective after rescheduling {choice + semi_fixed} with <{strategy_names[strategy]}>. Discarding solution.")
                 strategy = (strategy + 1) % len(strategy_functions)
 
-                worse_solution = True
                 nums_of_no_improvement += 1
 
-            if time() - now < (time_limit * 0.8) and not worse_solution:
+            if time() - now < (time_limit * 0.8) and solver.deadlock_constraints_added:
                 mode_sizes[mode] = min(mode_sizes[mode] + 1, len(self.instance.trains))
             else:
                 mode_sizes[mode] = max(1, mode_sizes[mode] - 1)

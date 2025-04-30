@@ -125,6 +125,8 @@ class TrainSolver:
 
     def create_variables(self):
         for i in self.choice:
+            if i == 88:
+                a = 4
             for res in self.train_resource_usage[i]:
                 if check_resource_avoidance(self.trains[i], [res], return_path=False):
                     self.resource_usage_vars[i][res] = self.model.NewBoolVar(name="")
@@ -402,6 +404,8 @@ class Heuristic:
 
         feasible_solution = [{} for _ in range(len(self.trains))]
         scc_start = 0
+        max_end = 0
+        max_rt = 0
         scheduled_sccs = []
 
         for scc in self.blocking_dependencies:
@@ -415,7 +419,7 @@ class Heuristic:
                 if self.restricted_trains_to_path.get(scc[0]) is not None:
                     feasible_solution[scc[0]] = self.schedule_single_train(scc[0], scc_start)
                     if not TrainSolver(self.instance, feasible_solution, scheduled_sccs, [], scc_resource_evaluation, scc, self.train_to_res, 0, True).solve():
-                        logging.warning(f"Could not schedule Train {scc[0]} with the solver. Scheduling it sequentially instead")
+                        logging.error(f"Could not schedule Train {scc[0]} with the solver. Scheduling it sequentially instead")
                 else:
                     if not TrainSolver(self.instance, feasible_solution, scheduled_sccs, scc, scc_resource_evaluation, [], self.train_to_res, 0, True).solve():
                         logging.warning(f"Could not schedule Train {scc[0]} with the solver. Scheduling it sequentially instead")
@@ -458,15 +462,13 @@ class Heuristic:
                         unscheduled_trains.remove(train)
                         scheduled_trains.append(train)
 
-            max_end = 0
-            max_rt = 0
             for train in scc:
                 for op, timings in feasible_solution[train].items():
                     max_end = max(max_end, timings["end"])
                     for res in timings["resources"]:
                         max_rt = max(max_rt, res["release_time"])
 
-            scc_start = max_end + max_rt
+            scc_start = max_end + max_rt + 1
             logging.info(f"Scheduling {scc} done \n")
             scheduled_sccs.extend(scc)
 
@@ -599,7 +601,8 @@ def create_train_graph(train):
 
 def check_resource_avoidance(train, resources, return_path = False):
     start_res = [res["resource"] for res in train[0]["resources"]]
-    if set(resources).intersection(start_res):
+    end_res = [res["resource"] for res in train[-1]["resources"]]
+    if set(resources).intersection(start_res) or set(resources).intersection(end_res):
         return None
 
     train_graph = create_train_graph(train)

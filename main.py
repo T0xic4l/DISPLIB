@@ -177,9 +177,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
     slurminade.update_default_configuration(
         partition="alg",
+        constraint="alggen03",
         exclusive=True,
-        mail_type="FAIL",
-        mail_user="elias.kaiser@tu-braunschweig.de",
         cpus_per_task=8,
         mem=32_000
     )

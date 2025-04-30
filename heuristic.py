@@ -11,13 +11,15 @@ from logger import TimeLogger
 
 
 class TrainSolver:
-    def __init__(self, instance, feasible_solution, fix_trains, choice, resource_evaluation, semi_fixed_trains, train_resource_usage, start_time=0):
+    def __init__(self, instance, feasible_solution, fix_trains, choice, resource_evaluation, semi_fixed_trains, train_resource_usage, start_time, single_train_schedule=False):
         with TimeLogger("Model Setup"):
             self.start_time = start_time
+            self.single_train_schedule = single_train_schedule
             self.choice = choice
             self.fix_trains = fix_trains
             self.semi_fixed_trains = semi_fixed_trains
             self.feasible_solution = feasible_solution
+            self.objectives = instance.objectives
             self.trains = instance.trains
             self.train_graphs = [create_train_graph(train) for train in self.trains]
             self.resource_evaluation = resource_evaluation
@@ -31,6 +33,7 @@ class TrainSolver:
             self.op_end_vars = dict()
             self.edge_select_vars = defaultdict(dict)
             self.resource_usage_vars = defaultdict(dict)
+            self.threshold_vars = dict()
 
             self.create_variables()
 
@@ -38,12 +41,27 @@ class TrainSolver:
             self.add_timing_constraints()
             self.add_resource_conflict_constraints()
             self.add_resource_usage_constraints()
+            if self.single_train_schedule:
+                self.add_threshold_constraints()
+            else:
+                pass
 
 
     def solve(self):
         with TimeLogger("Solving"):
             self.solver.parameters.log_search_progress = False
             self.solver.parameters.num_workers = 8
+
+            if self.single_train_schedule:
+                self.set_time_objective()
+                status = self.solver.Solve(self.model)
+
+                if status == cp.OPTIMAL or status == cp.FEASIBLE:
+                    self.update_feasible_solution()
+                    return True
+                elif status == cp.INFEASIBLE:
+                    logging.warning("Model is infeasible.")
+                    return False
 
             self.set_path_objective()
             path_status = self.solver.Solve(self.model)
@@ -71,6 +89,40 @@ class TrainSolver:
         self.model.minimize(sum(self.op_start_vars[i, len(self.trains[i]) - 1] for i in self.choice + self.semi_fixed_trains))
 
 
+    def add_threshold_constraints(self):
+        with TimeLogger("Threshold Constraints"):
+            for obj in self.objectives:
+                train = obj["train"]
+
+                if train in self.choice:
+                    op = obj["operation"]
+                    op_selected = self.model.new_bool_var(name="")
+                    if op != 0:
+                        self.model.add(op_selected == sum(
+                            self.edge_select_vars[train][in_e] for in_e in self.train_graphs[train].in_edges(op)))
+                    else:
+                        self.model.add(op_selected == sum(
+                            self.edge_select_vars[train][out_e] for out_e in self.train_graphs[train].out_edges(op)))
+
+                    if obj["coeff"]:
+                        self.model.add(self.threshold_vars[train, op] >= self.op_start_vars[train, op] - obj["threshold"]).OnlyEnforceIf(op_selected)
+                    else:
+                        self.model.add(self.op_start_vars[train, op] + 1 <= obj["threshold"]).OnlyEnforceIf([self.threshold_vars[train, op].Not(), op_selected])
+
+
+    def create_objective_vars(self):
+        for obj in self.objectives:
+            if obj["train"] in self.choice:
+                if obj["coeff"] != 0:
+                    self.threshold_vars[obj["train"], obj["operation"]] = self.model.NewIntVar(lb=0, ub=2 ** 40, name="")
+                else:
+                    self.threshold_vars[obj["train"], obj["operation"]] = self.model.NewBoolVar(name="")
+
+
+    def set_obj_objective(self):
+        self.model.minimize(sum(obj["coeff"] * self.threshold_vars[obj["train"], obj["operation"]] + obj["increment"] * self.threshold_vars[obj["train"], obj["operation"]] for obj in self.objectives if obj["train"] in self.choice))
+
+
     def create_variables(self):
         for i in self.choice:
             for res in self.train_resource_usage[i]:
@@ -88,6 +140,9 @@ class TrainSolver:
             for op, timings in self.feasible_solution[i].items():
                 self.op_start_vars[i, op] = self.model.NewIntVar(lb=self.trains[i][op]["start_lb"], ub=self.trains[i][op]["start_ub"], name="")
                 self.op_end_vars[i, op] = self.model.NewIntVar(lb=self.trains[i][op]["start_lb"] + self.trains[i][op]["min_duration"], ub=2 ** 40, name="")
+
+        if self.single_train_schedule:
+            self.create_objective_vars()
 
 
     def add_path_constraints(self):
@@ -138,12 +193,14 @@ class TrainSolver:
 
                 for train, timings in trains.items():
                     if train in self.fix_trains:
-                        assert len(timings["start"]) <= 1 and len(timings["end"]) <= 1, f"More than one start-/end-operation for resource {res}, fixed train {train}"
+                        interval_start = min(timings["start"])
+                        interval_end = max(timings["end"])
+
                         rt = next((f_res["release_time"] for f_res in self.feasible_solution[train][timings["end"][0]]["resources"] if f_res["resource"] == res), None)
                         assert rt is not None, f"Releasetime for resource {res}, fixed train {train} not found"
 
-                        start = self.feasible_solution[train][timings["start"][0]]["start"]
-                        size = self.feasible_solution[train][timings["end"][0]]["end"] + rt - start
+                        start = self.feasible_solution[train][interval_start]["start"]
+                        size = self.feasible_solution[train][interval_end]["end"] + rt - start
                         interval_vars.append(self.model.NewFixedSizeIntervalVar(start=start, size=size, name=""))
                     elif train in self.choice:
                         start_var = self.model.NewIntVar(lb=0, ub=2 ** 40, name="")
@@ -166,12 +223,11 @@ class TrainSolver:
                         else:
                             interval_vars.append(self.model.NewIntervalVar(start=start_var, end=end_var, size=size, name=""))
                     elif train in self.semi_fixed_trains:
-                        assert len(timings["start"]) <= 1 and len(timings["end"]) <= 1, f"More than one start-/end-operation for resource {res}, semi-fixed train {train}"
                         size = self.model.new_int_var(lb=0, ub= 2 ** 40, name="")
                         end = self.model.new_int_var(lb=0, ub= 2 ** 40, name="")
                         rt = next((f_res["release_time"] for f_res in self.feasible_solution[train][timings["end"][0]]["resources"] if f_res["resource"] == res), None)
                         assert rt is not None and rt != 0, f"Releasetime for resource {res}, semi-fixed train {train} not found"
-                        self.model.add(end == rt + self.op_end_vars[train, timings["end"][0]])
+                        self.model.add(end == rt + self.op_end_vars[train, max(timings["end"])])
 
                         interval_vars.append(self.model.NewIntervalVar(start=self.op_start_vars[train, timings["start"][0]], end=end, size=size, name=""))
                 self.model.AddNoOverlap(interval_vars)
@@ -346,6 +402,7 @@ class Heuristic:
 
         feasible_solution = [{} for _ in range(len(self.trains))]
         scc_start = 0
+        scheduled_sccs = []
 
         for scc in self.blocking_dependencies:
             logging.info(f"Start of scheduling scc: {scc}")
@@ -356,6 +413,9 @@ class Heuristic:
 
             if len(scc) == 1:
                 feasible_solution[scc[0]] = self.schedule_single_train(scc[0], scc_start)
+                if not TrainSolver(self.instance, feasible_solution, scheduled_sccs, scc, scc_resource_evaluation, [], self.train_to_res, 0, True).solve():
+                    logging.warning(f"Could not schedule Train {scc[0]} with the solver. Scheduling it sequentially instead")
+                    feasible_solution[scc[0]] = self.schedule_single_train(scc[0], scc_start)
             else:
                 counter = count(start=1, step=1)
 
@@ -404,6 +464,7 @@ class Heuristic:
 
             scc_start = max_end + max_rt
             logging.info(f"Scheduling {scc} done \n")
+            scheduled_sccs.extend(scc)
 
         result = {
             "solution" : feasible_solution,

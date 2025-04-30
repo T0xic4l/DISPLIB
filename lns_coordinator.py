@@ -44,7 +44,7 @@ class LnsCoordinator:
         time_limit = 20
 
         mode = 0
-        mode_sizes = [1, 1, 1]
+        mode_sizes = [min(15, max(int(round(0.1 * len(self.instance.trains))), 1)), 1, 1]
 
         strategy = 0
         strat_name = strategy_names[strategy]
@@ -61,9 +61,17 @@ class LnsCoordinator:
             if mode == 0:
                 choice = []
                 semi_fixed = strategy_functions[strategy](mode_sizes[mode])
+                if len(semi_fixed) == 0:
+                    logging.info("Empty semi-fixed list, switching to next strategy.")
+                    strategy = (strategy + 1) % len(strategy_functions)
+                    semi_fixed = strategy_functions[strategy](mode_sizes[mode])
             else:
                 choice = strategy_functions[strategy](mode_sizes[mode])
                 semi_fixed = []
+                if len(choice) == 0:
+                    logging.info("Empty choice list, switching to next strategy.")
+                    strategy = (strategy + 1) % len(strategy_functions)
+                    choice = strategy_functions[strategy](mode_sizes[mode])
 
             now = time()
             new_feasible_sol = LnsDisplibSolver(self.instance, self.feasible_sol, choice, semi_fixed, deepcopy(self.train_to_resources), min(time_limit, self.calculate_remaining_time() - 1), mode == 2).solve()
@@ -84,7 +92,7 @@ class LnsCoordinator:
                 break
 
             if new_objective_value < self.objective:
-                logging.info(f"{at_min} min {at_sec} sec - Found solution with better objective {new_objective_value} by rescheduling {choice + semi_fixed} with <{strat_name}>")
+                logging.info(f"{at_min} min {at_sec} sec - Found solution with better objective {new_objective_value} by rescheduling {choice + semi_fixed} with <{strategy_names[strategy]}>")
                 self.objective = new_objective_value
                 self.feasible_sol = new_feasible_sol
                 if start_mode_obj * 0.9 >= self.objective:
@@ -94,17 +102,15 @@ class LnsCoordinator:
 
                 nums_of_no_improvement = 0
             elif new_objective_value == self.objective:
-                logging.info(f"{at_min} min {at_sec} sec - Found solution with same objective {new_objective_value} by rescheduling {choice + semi_fixed} with {strat_name}")
+                logging.info(f"{at_min} min {at_sec} sec - Found solution with same objective {new_objective_value} by rescheduling {choice + semi_fixed} with <{strategy_names[strategy]}>")
                 strategy = (strategy + 1) % len(strategy_functions)
-                strat_name = strategy_names[strategy]
                 self.objective = new_objective_value
                 self.feasible_sol = new_feasible_sol
 
                 nums_of_no_improvement += 1
             else: # Buggy case
-                logging.warning(f"{at_min} min {at_sec} sec - Found solution with worse objective after rescheduling {choice + semi_fixed} with {strat_name}. Discarding solution.")
+                logging.warning(f"{at_min} min {at_sec} sec - Found solution with worse objective after rescheduling {choice + semi_fixed} with <{strategy_names[strategy]}>. Discarding solution.")
                 strategy = (strategy + 1) % len(strategy_functions)
-                strat_name = strategy_names[strategy]
 
                 worse_solution = True
                 nums_of_no_improvement += 1
@@ -115,7 +121,7 @@ class LnsCoordinator:
                 mode_sizes[mode] = max(1, mode_sizes[mode] - 1)
 
             if mode == 0:
-                if time() - switch_mode_timer >= 80 or nums_of_no_improvement == len(strategy_functions):
+                if time() - switch_mode_timer >= 80 or nums_of_no_improvement == 2 * len(strategy_functions):
                     mode = 1
                     strategy = 0
                     nums_of_no_improvement = 0

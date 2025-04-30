@@ -161,7 +161,7 @@ def analyze_operations_graphs(instance, instance_name):
             pos,
             with_labels=True,
             node_size=700,
-            node_color=["#B03A2E" if node in red_nodes1 else "lightblue" for node in graph.nodes()],
+            node_color=["#B03A2E" if node in red_nodes else "lightblue" for node in graph.nodes()],
             font_size=10,
             font_color="black",
             edge_color="gray",

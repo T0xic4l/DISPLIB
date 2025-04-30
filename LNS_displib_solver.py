@@ -25,7 +25,7 @@ class LnsDisplibSolver:
         self.deadlock_constraints_added = True
 
         self.old_solution = copy.deepcopy(feasible_solution)
-        self.feasible_sol = feasible_solution
+        self.feasible_sol = copy.deepcopy(feasible_solution)
         self.choice = choice
         self.semi_fixed = semi_fixed
         self.fix_trains = [i for i in range(len(instance.trains)) if i not in self.choice + self.semi_fixed]
